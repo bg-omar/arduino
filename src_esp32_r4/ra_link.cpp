@@ -8,6 +8,9 @@
 namespace {
 BrainTelemetry sTelemetry{};
 bool sHaveTelemetry = false;
+ManualDemonstration sDemo{};
+bool sHaveDemo = false;
+uint32_t sLastDemoLocalMs = 0;
 uint32_t sLastTelemetryLocalMs = 0;
 uint32_t sLastHeartbeatMs = 0;
 char sLine[192] = {};
@@ -26,6 +29,13 @@ void handleLine(char* line, uint32_t now) {
         sLastTelemetryLocalMs = now;
         return;
     }
+    ManualDemonstration d;
+    if (parseManualDemonstration(line, d)) {
+        sDemo = d;
+        sHaveDemo = true;
+        sLastDemoLocalMs = now;
+        return;
+    }
     if (strncmp(line, "A,", 2) == 0 || strncmp(line, "RA,", 3) == 0) {
         strncpy(sLastAck, line, sizeof(sLastAck)-1);
         sLastAck[sizeof(sLastAck)-1] = '\0';
@@ -38,6 +48,7 @@ void begin() {
     // esp_uno_r4_setup() already configured SERIAL_AT = ESP32-S3 Serial1
     // at 115200 baud on the onboard RA4M1 link (GPIO 6/5).
     sHaveTelemetry = false;
+    sHaveDemo = false;
     sLastHeartbeatMs = 0;
     sendLine("B,HB");
 }
@@ -73,6 +84,10 @@ bool hasTelemetry() { return sHaveTelemetry; }
 const BrainTelemetry& telemetry() { return sTelemetry; }
 uint32_t telemetryAge(uint32_t now) { return sHaveTelemetry ? static_cast<uint32_t>(now - sLastTelemetryLocalMs) : 0xFFFFFFFFu; }
 const char* lastAck() { return sLastAck; }
+
+bool hasDemonstration() { return sHaveDemo; }
+const ManualDemonstration& demonstration() { return sDemo; }
+uint32_t demonstrationAge(uint32_t now) { return sHaveDemo ? static_cast<uint32_t>(now - sLastDemoLocalMs) : 0xFFFFFFFFu; }
 
 void arm(bool enable) {
     sendLine(enable ? "B,ARM,1" : "B,ARM,0");

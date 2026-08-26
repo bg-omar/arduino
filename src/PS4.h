@@ -7,7 +7,15 @@
 
 #include <cstdint>
 
-
+struct Ps4ManualSnapshot {
+    uint32_t ms = 0;
+    int lx = 0;
+    int ly = 0;
+    int rx = 0;
+    int ry = 0;
+    bool drive_active = false;
+    bool head_active = false;
+};
 
 class PS4 {
 private:
@@ -47,6 +55,7 @@ public:
     static void pollSerial();
     static void driveWatchdog();
     static bool isManualControlActive();
+    static Ps4ManualSnapshot manualSnapshot();
 
 };
 

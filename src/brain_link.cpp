@@ -13,6 +13,7 @@
 #include "config.h"
 #include "gyroscope.h"
 #include "main_ra.h"
+#include "manual_demo.h"
 #include "motor.h"
 #include "pwm_board.h"
 #include "robot_modes.h"
@@ -233,6 +234,19 @@ void sendTelemetry(uint32_t now) {
         robot_modes::anyActive() ? 1 : 0,
         sArmed ? 1 : 0);
     SERIAL_AT.println(line);
+
+    // Brain v0.4 imitation-learning side channel. This mirrors the already
+    // applied PS4 intent; it never changes motor/servo authority on the RA4M1.
+    const Ps4ManualSnapshot demo = PS4::manualSnapshot();
+    if (demo.drive_active || demo.head_active) {
+        char dline[96];
+        snprintf(dline, sizeof(dline),
+            "D,%lu,%d,%d,%d,%d,%d,%d",
+            static_cast<unsigned long>(demo.ms),
+            demo.lx, demo.ly, demo.rx, demo.ry,
+            demo.drive_active ? 1 : 0, demo.head_active ? 1 : 0);
+        SERIAL_AT.println(dline);
+    }
 }
 }
 
@@ -242,7 +256,7 @@ void begin() {
     sMoveActive = false;
     sLastHeartbeatMs = millis();
     sLastTelemetryMs = 0;
-    SERIAL_AT.println("RA,HELLO,BRAIN,0.1.0");
+    SERIAL_AT.println("RA,HELLO,BRAIN,0.4.0");
 }
 
 void poll(uint32_t now) {

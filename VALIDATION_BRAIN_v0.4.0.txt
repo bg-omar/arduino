@@ -1,0 +1,71 @@
+Wall-Z Brain v0.4.0 Validation Report
+======================================
+
+Scope
+-----
+Baseline: Wall-Z Brain v0.3.0
+Target:   Wall-Z Brain v0.4.0
+Feature:  PS4 imitation learning / behavioural cloning scaffold with bounded online kNN policy.
+
+Host validation
+---------------
+PASS  Brain v0.3 regression standalone tests (C++17, -Wall -Wextra -Werror)
+PASS  Brain v0.4 imitation standalone tests
+PASS  AddressSanitizer + UndefinedBehaviorSanitizer imitation test
+PASS  ESP32-S3 main source strict syntax check against API stubs
+PASS  ESP32-S3 RA link strict syntax check against API stubs
+PASS  RA4M1 brain_link strict syntax check against API stubs
+PASS  ESP32-S3 imitation_store strict syntax check against API stubs
+PASS  Python syntax check: tools/train_wallz_imitation_tinyml.py
+PASS  Dashboard JavaScript syntax check
+PASS  v0.3 -> v0.4 unified patch clean-room round-trip (patch -p1 + byte-for-byte compare)
+
+Safety / authority invariants retained
+--------------------------------------
+- PS4/manual remains the highest user-control authority.
+- RA4M1 retains motor, servo, heartbeat, sonar-forward, robot-mode, and movement-deadline safety gates.
+- Fisheye remains perception-only and has no motor authority.
+- Imitation execution is SHADOW ONLY by default.
+- Learned actions may execute only when imitation policy is explicitly enabled, Brain is armed,
+  manual control is inactive, robot modes are inactive, RA telemetry is fresh, and confidence >= 680/1000.
+- Obstacle context forces BRAKE before imitation policy evaluation.
+- PS4 demonstration capture is observation-only; existing PS4 drive/head control paths are not rerouted.
+
+Critical unchanged files vs v0.3.0
+----------------------------------
+PASS  src/motor.cpp
+      sha256 61f04b34bc8b2fccd61e87f8fec9afcba7032d289fd2f501298e3890cf339894
+PASS  src/pwm_board.cpp
+      sha256 020a5309c6972e19d1b880b7e2b44d3a002c5d86a2f299bb92996778ca6b6712
+PASS  src/robot_modes.cpp
+      sha256 b832d0b47dd1ab30a2e4add14adb5773984d37abe6bdd1cdb79ac071a368236b
+PASS  src/radar_scan.h
+      sha256 a7f9b1ed874360c51bb81349a49b1e1ebee624f4f2ece1913846218a2811a4c6
+PASS  src/main_ra.cpp
+      sha256 d19ce69ebc9c3969d65fc34ec12f26a8a44b0a6576bece4559ed7b3c6e3b219c
+PASS  src_esp32_ps4/main_ps4.cpp
+      sha256 2e00649ffde1b623a9f9949ae4feca1dbce53ea32f5d2a6427d5a36377959a4d
+PASS  src_esp32_fisheye/main_fisheye.cpp
+      sha256 5164bfce935241ebebca7cac5140574afd1df7ba328fd507306760536752981a
+
+Imitation memory characteristics
+--------------------------------
+- Capacity: 96 bounded samples.
+- Policy: weighted k-nearest-neighbours, k=5.
+- Features: sonar, light balance, microphone balance, gyro magnitude, head pan,
+  fisheye attention X, visual motion, visual familiarity, plus stable concept-tag hash.
+- Execution confidence threshold: 680/1000.
+- Near-duplicate demonstration rejection threshold: feature distance 80.
+- Persistent NVS payload size in current host ABI check: 1172 bytes.
+- Training dataset: SPIFFS /imitation_dataset.csv.
+
+Target-build limitation
+-----------------------
+NOT RUN: real PlatformIO builds for RA4M1 / onboard ESP32-S3 / ESP32-CAM targets.
+Reason: PlatformIO CLI (pio) is not installed in this execution environment.
+Use run_all.cmd on the development machine to perform the actual target compiles.
+
+Result
+------
+HOST / STATIC VALIDATION: PASS
+HARDWARE TARGET BUILD:     NOT RUN (toolchain unavailable here)

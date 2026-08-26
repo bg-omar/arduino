@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include "brain_protocol.h"
+#include "manual_demo.h"
 
 namespace ra_link {
 void begin();
@@ -13,6 +14,10 @@ bool hasTelemetry();
 const BrainTelemetry& telemetry();
 uint32_t telemetryAge(uint32_t now);
 const char* lastAck();
+
+bool hasDemonstration();
+const ManualDemonstration& demonstration();
+uint32_t demonstrationAge(uint32_t now);
 
 void arm(bool enable);
 void stop();

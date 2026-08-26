@@ -34,3 +34,9 @@ We have an other ESP32-Cam on the front to have a video feed [src_esp32_cam]
 Current cognitive/vision extension: `README_BRAIN_v0.3.0.md`.
 
 The dedicated fisheye node is `src_esp32_fisheye` and remains perception-only. It sends fast motion telemetry plus low-rate 20x15 grayscale learning snapshots directly to the onboard ESP32-S3. The S3 can persistently learn up to 8 named visual concepts from the web dashboard.
+
+## Brain v0.4
+
+Current learning extension: `README_BRAIN_v0.4.0.md`.
+
+Brain v0.4 keeps the v0.3 fisheye visual memory and adds bounded, persistent PS4 imitation learning on the onboard ESP32-S3. Manual PS4 control remains direct on the RA4M1; a new observation-only `D,...` UART side channel mirrors stick intent to the S3 so it can learn state -> action examples. Imitation starts in shadow mode and can execute only when Brain is separately armed, imitation policy is explicitly enabled, confidence passes the gate, and all RA4M1 safety checks allow the command.

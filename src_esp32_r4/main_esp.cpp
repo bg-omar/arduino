@@ -1,11 +1,12 @@
 /*
- * Wall-Z Brain v0.3.0 — onboard ESP32-S3
+ * Wall-Z Brain v0.4.0 — onboard ESP32-S3
  *
  * Responsibilities:
  *   - keep UNO R4 USB CDC/CMSIS-DAP bridge active via ESP_UNO_R4
  *   - WiFi + NTP + web dashboard
  *   - read structured telemetry from RA4M1 over the internal UART
  *   - online novelty / Q-learning state with persistent NVS storage
+ *   - bounded PS4 imitation learning with persistent NVS storage
  *   - optional, explicitly armed low-authority autonomous suggestions
  *
  * Safety/authority model:
@@ -26,6 +27,8 @@
 #include "brain_core.h"
 #include "brain_store.h"
 #include "esp_status.h"
+#include "imitation_memory.h"
+#include "imitation_store.h"
 #include "log_buffer.h"
 #include "ra_link.h"
 #include "real_time.h"
@@ -39,6 +42,7 @@ WebServer server(80);
 LogBuffer gatewayLog;
 BrainCore brain;
 VisualMemory visualMemory;
+ImitationMemory imitationMemory;
 uint16_t lastObservedGridSeq = 0;
 uint32_t lastWifiRetryMs = 0;
 uint32_t lastNtpPollMs = 0;
@@ -46,9 +50,14 @@ uint32_t lastBrainObserveMs = 0;
 uint32_t lastBrainActionMs = 0;
 uint32_t lastPersistMs = 0;
 uint32_t lastVisionPingMs = 0;
+uint32_t lastDemoLearnedMs = 0;
+uint32_t lastImitationPersistMs = 0;
 bool wifiWasConnected = false;
 bool autonomyEnabled = false;
 bool visionFsReady = false;
+bool imitationPolicyEnabled = false;
+bool imitationDirty = false;
+ImitationPrediction lastImitationPrediction{};
 BrainAction lastSuggested = BrainAction::Idle;
 BrainContext lastContext = BrainContext::Calm;
 
@@ -58,6 +67,7 @@ constexpr uint32_t kWifiConnectTimeoutMs = 15000;
 constexpr uint32_t kBrainActionPeriodMs = 850;
 constexpr uint32_t kPersistPeriodMs = 300000; // reduce NVS wear
 constexpr uint32_t kVisionPingPeriodMs = 5000;
+constexpr uint32_t kImitationPersistMs = 60000;
 
 const char kIndexHtml[] PROGMEM = R"HTML(<!DOCTYPE html>
 <html lang="en">
@@ -76,7 +86,7 @@ small{opacity:.65}.armed{color:#8f8}.off{color:#aaa}.warn{color:#f99}
 </style>
 </head>
 <body>
-<h1>Wall-Z Brain v0.3.0</h1><small>RA4M1 owns motors/safety. ESP32-S3 observes, learns visual concepts and remembers rewards.</small>
+<h1>Wall-Z Brain v0.4.0</h1><small>RA4M1 owns motors/safety. ESP32-S3 observes, learns visual concepts and learns from your PS4 demonstrations.</small>
 <div class="grid">
 <section class="card"><h2>Robot</h2><dl>
 <dt>RA link</dt><dd id="ra">-</dd><dt>distance</dt><dd id="dist">-</dd><dt>light L/R</dt><dd id="light">-</dd><dt>mic L/R</dt><dd id="mic">-</dd><dt>gyro mrad/s</dt><dd id="gyro">-</dd><dt>head</dt><dd id="head">-</dd><dt>manual</dt><dd id="manual">-</dd><dt>robot mode</dt><dd id="robotmode">-</dd><dt>brain armed</dt><dd id="armed">-</dd></dl>
@@ -85,6 +95,9 @@ small{opacity:.65}.armed{color:#8f8}.off{color:#aaa}.warn{color:#f99}
 <dt>link</dt><dd id="visionlink">-</dd><dt>motion</dt><dd id="vmotion">-</dd><dt>attention x/y</dt><dd id="vxy">-</dd><dt>brightness</dt><dd id="vbright">-</dd><dt>contrast</dt><dd id="vcontrast">-</dd><dt>fps</dt><dd id="vfps">-</dd><dt>grid</dt><dd id="vgrid">-</dd><dt>concept</dt><dd id="vconcept">unknown</dd><dt>familiarity</dt><dd id="vfamiliarity">0</dd><dt>concept value</dt><dd id="vvalue">0</dd><dt>concepts</dt><dd id="vconcepts">0</dd></dl>
 <button onclick="post('/api/vision/ping')">Ping camera</button><button onclick="post('/api/vision/snapshot')">Snapshot</button><button onclick="post('/api/vision/threshold?v=18')">Default threshold</button>
 <p><input id="teachlabel" maxlength="15" placeholder="person / ball / door"><button class="good" onclick="teach()">Teach current view</button><button class="danger" onclick="post('/api/vision/concepts/reset')">Forget all</button></p><p><a href="/api/vision/dataset"><button>Download TinyML data</button></a><button onclick="post('/api/vision/dataset/reset')">Clear dataset</button></p><small>Teach 3–8 examples from slightly different poses for a more stable concept. Each teach also records a labelled grid for later TensorFlow training.</small></section>
+<section class="card"><h2>Imitation learning</h2><dl>
+<dt>PS4 demo</dt><dd id="idemostate">-</dd><dt>learned samples</dt><dd id="isamples">0</dd><dt>prediction</dt><dd id="ipred">idle</dd><dt>confidence</dt><dd id="iconf">0</dd><dt>nearest</dt><dd id="inear">-</dd><dt>policy</dt><dd id="ipolicy">shadow</dd></dl>
+<button class="good" onclick="post('/api/imitation/policy?on=1')">Use imitation</button><button onclick="post('/api/imitation/policy?on=0')">Shadow only</button><button class="danger" onclick="post('/api/imitation/reset')">Forget driving</button><p><a href="/api/imitation/dataset"><button>Download PS4 dataset</button></a><button onclick="post('/api/imitation/dataset/reset')">Clear dataset</button></p><small>Drive Wall-Z normally with PS4. The S3 observes your action + sensor/vision state. Execution still requires Brain ARM and RA4M1 safety approval.</small></section>
 <section class="card"><h2>Cognitive state</h2><dl>
 <dt>context</dt><dd id="context">-</dd><dt>suggestion</dt><dd id="action">-</dd><dt>observations</dt><dd id="obs">-</dd><dt>rewards</dt><dd id="rewards">-</dd></dl>
 <div>novelty <span id="noveltyv"></span><div class="bar"><i id="novelty"></i></div></div>
@@ -101,10 +114,11 @@ async function post(u){try{await fetch(u,{method:'POST'});setTimeout(tick,80)}ca
 async function teach(){const v=document.getElementById('teachlabel').value.trim();if(!v)return;await post('/api/vision/teach?label='+encodeURIComponent(v));}
 function bar(id,v){v=Math.max(0,Math.min(1,v));document.getElementById(id).style.width=(100*v).toFixed(0)+'%';document.getElementById(id+'v').textContent=v.toFixed(3)}
 async function tick(){try{
- const [s,r,v,b,l]=await Promise.all([fetch('/api/status').then(x=>x.json()),fetch('/api/robot').then(x=>x.json()),fetch('/api/vision').then(x=>x.json()),fetch('/api/brain').then(x=>x.json()),fetch('/api/log').then(x=>x.json())]);
+ const [s,r,v,b,i,l]=await Promise.all([fetch('/api/status').then(x=>x.json()),fetch('/api/robot').then(x=>x.json()),fetch('/api/vision').then(x=>x.json()),fetch('/api/brain').then(x=>x.json()),fetch('/api/imitation').then(x=>x.json()),fetch('/api/log').then(x=>x.json())]);
  wifi.textContent=s.wifi;ip.textContent=s.ip;ssid.textContent=s.ssid;rssi.textContent=s.rssi+' dBm';heap.textContent=s.heap;ntp.textContent=s.ntp;
  ra.textContent=r.online?'online ('+r.age_ms+' ms)':'offline';dist.textContent=r.distance_mm<0?'n/a':r.distance_mm+' mm';light.textContent=r.light_l+' / '+r.light_r;mic.textContent=r.mic_l+' / '+r.mic_r;gyro.textContent=r.gx+' / '+r.gy+' / '+r.gz;head.textContent=r.head_xy+' / '+r.head_z;manual.textContent=r.manual?'ACTIVE':'no';robotmode.textContent=r.robot_mode?'ACTIVE':'no';armed.textContent=r.brain_armed?'YES':'no';armed.className=r.brain_armed?'armed':'off';ack.textContent=r.ack;
  visionlink.textContent=v.online?'online ('+v.age_ms+' ms)':'offline';vmotion.textContent=v.motion+'/1000';vxy.textContent=v.x+' / '+v.y;vbright.textContent=v.brightness;vcontrast.textContent=v.contrast;vfps.textContent=(v.fps_x10/10).toFixed(1);vgrid.textContent=v.grid_online?'online ('+v.grid_age_ms+' ms)':'offline';vconcept.textContent=v.concept;vfamiliarity.textContent=v.familiarity+'/1000';vvalue.textContent=v.concept_value;vconcepts.textContent=v.concepts;
+ idemostate.textContent=i.demo_online?'active ('+i.demo_age_ms+' ms)':'idle';isamples.textContent=i.samples;ipred.textContent=i.prediction;iconf.textContent=i.confidence+'/1000';inear.textContent=i.nearest;ipolicy.textContent=i.policy?'enabled':'shadow';
  context.textContent=b.context;action.textContent=b.suggestion+(b.autonomy?' [AUTO]':' [shadow]');obs.textContent=b.observations;rewards.textContent=b.rewards;bar('novelty',b.novelty);bar('curiosity',b.curiosity);bar('arousal',b.arousal);bar('confidence',b.confidence);valence.textContent=b.valence.toFixed(3);document.getElementById('log').textContent=(l.lines||[]).join('\n');
 }catch(e){}}
 tick();setInterval(tick,500);
@@ -315,6 +329,80 @@ void handleVisionDatasetReset() {
     server.send(200,"application/json","{\"reset\":true}");
 }
 
+uint16_t currentConceptTag() {
+    const VisualRecognition& r = visualMemory.current();
+    return r.index >= 0 ? ImitationMemory::tagFromLabel(r.label) : 0;
+}
+
+bool appendImitationTrainingSample(const ManualDemonstration& d, const BrainTelemetry& t) {
+    if (!visionFsReady) return false;
+    const bool newFile = !SPIFFS.exists("/imitation_dataset.csv");
+    File f = SPIFFS.open("/imitation_dataset.csv", FILE_APPEND);
+    if (!f) return false;
+    if (newFile) {
+        f.println("ms,action,lx,ly,rx,ry,distance_mm,light_l,light_r,mic_l,mic_r,gx,gy,gz,head_xy,head_z,vision_motion,vision_x,vision_y,vision_familiarity,concept");
+    }
+    const ImitationAction a = ImitationMemory::actionFromManual(d);
+    const VisualRecognition& r = visualMemory.current();
+    f.print(static_cast<unsigned long>(d.ms)); f.print(',');
+    f.print(ImitationMemory::actionName(a)); f.print(',');
+    f.print(d.lx); f.print(','); f.print(d.ly); f.print(','); f.print(d.rx); f.print(','); f.print(d.ry); f.print(',');
+    f.print(t.distance_mm); f.print(','); f.print(t.light_l); f.print(','); f.print(t.light_r); f.print(',');
+    f.print(t.mic_l); f.print(','); f.print(t.mic_r); f.print(',');
+    f.print(t.gyro_x_mrad); f.print(','); f.print(t.gyro_y_mrad); f.print(','); f.print(t.gyro_z_mrad); f.print(',');
+    f.print(t.head_xy); f.print(','); f.print(t.head_z); f.print(',');
+    f.print(t.vision_motion); f.print(','); f.print(t.vision_x); f.print(','); f.print(t.vision_y); f.print(','); f.print(t.vision_familiarity); f.print(',');
+    f.println(r.index >= 0 && r.label[0] ? r.label : "unknown");
+    f.close();
+    return true;
+}
+
+void handleImitation() {
+    const uint32_t now = millis();
+    const BrainTelemetry t = fusedTelemetry(now);
+    lastImitationPrediction = imitationMemory.predict(t, currentConceptTag());
+    const bool demoOnline = ra_link::hasDemonstration() && ra_link::demonstrationAge(now) <= 600;
+    char json[512];
+    snprintf(json, sizeof(json),
+        "{\"demo_online\":%s,\"demo_age_ms\":%lu,\"samples\":%d,\"accepted\":%lu,\"duplicates\":%lu,\"prediction\":\"%s\",\"confidence\":%d,\"nearest\":%d,\"neighbors\":%d,\"policy\":%s,\"threshold\":%d}",
+        demoOnline ? "true" : "false", static_cast<unsigned long>(ra_link::demonstrationAge(now)),
+        imitationMemory.count(), static_cast<unsigned long>(imitationMemory.accepted()),
+        static_cast<unsigned long>(imitationMemory.rejectedDuplicate()),
+        ImitationMemory::actionName(lastImitationPrediction.action), lastImitationPrediction.confidence,
+        lastImitationPrediction.nearest_distance, lastImitationPrediction.neighbors,
+        imitationPolicyEnabled ? "true" : "false", WALLZ_IMITATION_EXEC_THRESHOLD);
+    server.send(200, "application/json", json);
+}
+
+void handleImitationPolicy() {
+    imitationPolicyEnabled = server.hasArg("on") && server.arg("on").toInt() != 0;
+    logLine(imitationPolicyEnabled ? "Imitation policy enabled (still requires Brain ARM)" : "Imitation policy shadow-only");
+    server.send(200, "application/json", imitationPolicyEnabled ? "{\"policy\":true}" : "{\"policy\":false}");
+}
+
+void handleImitationReset() {
+    imitationPolicyEnabled = false;
+    imitationMemory.reset();
+    imitation_store::clear();
+    logLine("PS4 imitation memory cleared");
+    server.send(200, "application/json", "{\"reset\":true}");
+}
+
+void handleImitationDataset() {
+    if (!visionFsReady || !SPIFFS.exists("/imitation_dataset.csv")) { server.send(404,"text/plain","no dataset"); return; }
+    File f = SPIFFS.open("/imitation_dataset.csv", FILE_READ);
+    if (!f) { server.send(500,"text/plain","dataset open failed"); return; }
+    server.sendHeader("Content-Disposition","attachment; filename=wallz_imitation_dataset.csv");
+    server.streamFile(f,"text/csv");
+    f.close();
+}
+
+void handleImitationDatasetReset() {
+    if (visionFsReady) SPIFFS.remove("/imitation_dataset.csv");
+    logLine("PS4 imitation dataset cleared");
+    server.send(200,"application/json","{\"reset\":true}");
+}
+
 void handleBrain() {
     BrainTelemetry t = fusedTelemetry(millis());
     const BrainMetrics& m = brain.metrics();
@@ -351,7 +439,8 @@ void handleStop() {
 
 void handleReward() {
     float v=server.hasArg("v")?server.arg("v").toFloat():0.0f;
-    if (v>1.0f) v=1.0f; if (v<-1.0f) v=-1.0f;
+    if (v > 1.0f) v = 1.0f;
+    if (v < -1.0f) v = -1.0f;
     const BrainContext next=brain.classify(fusedTelemetry(millis()));
     brain.reward(v,next);
     visualMemory.rewardCurrent(v);
@@ -368,6 +457,34 @@ void handleResetBrain() {
     server.send(200,"application/json","{\"reset\":true}");
 }
 
+void learnFromManualDemonstration(uint32_t now) {
+    if (!ra_link::hasDemonstration() || ra_link::demonstrationAge(now) > 600) return;
+    const ManualDemonstration& d = ra_link::demonstration();
+    if (d.ms == lastDemoLearnedMs) return;
+    lastDemoLearnedMs = d.ms;
+    const BrainTelemetry t = fusedTelemetry(now);
+    if (t.robot_mode != 0 || !ra_link::online(now)) return;
+    if (imitationMemory.learn(d, t, currentConceptTag())) {
+        imitationDirty = true;
+        appendImitationTrainingSample(d, t);
+    }
+}
+
+bool executeImitationAction(ImitationAction action, const BrainTelemetry& t) {
+    switch (action) {
+        case ImitationAction::Forward: ra_link::move('F', 180); return true;
+        case ImitationAction::Backward: ra_link::move('B', 160); return true;
+        case ImitationAction::TurnLeft: ra_link::move('L', 150); return true;
+        case ImitationAction::TurnRight: ra_link::move('R', 150); return true;
+        case ImitationAction::LookLeft: ra_link::head(145, t.head_z); return true;
+        case ImitationAction::LookRight: ra_link::head(35, t.head_z); return true;
+        case ImitationAction::LookUp: ra_link::head(t.head_xy, 25); return true;
+        case ImitationAction::LookDown: ra_link::head(t.head_xy, 140); return true;
+        case ImitationAction::Idle:
+        default: return false;
+    }
+}
+
 void executeBrainAction(uint32_t now) {
     if (!autonomyEnabled || !ra_link::online(now) || !ra_link::hasTelemetry()) return;
     const BrainTelemetry t=fusedTelemetry(now);
@@ -382,6 +499,23 @@ void executeBrainAction(uint32_t now) {
     lastBrainActionMs=now;
 
     lastContext=brain.classify(t);
+
+    // Obstacle stop has absolute priority over imitation. The RA still performs
+    // its own sonar gate as the final authority, so this is defense-in-depth.
+    if (lastContext == BrainContext::Obstacle) {
+        lastSuggested = BrainAction::Stop;
+        brain.markAction(lastContext, lastSuggested);
+        ra_link::brake();
+        return;
+    }
+
+    lastImitationPrediction = imitationMemory.predict(t, currentConceptTag());
+    if (imitationPolicyEnabled &&
+        lastImitationPrediction.action != ImitationAction::Idle &&
+        lastImitationPrediction.confidence >= WALLZ_IMITATION_EXEC_THRESHOLD) {
+        if (executeImitationAction(lastImitationPrediction.action, t)) return;
+    }
+
     lastSuggested=brain.suggest(t);
     brain.markAction(lastContext,lastSuggested);
     switch(lastSuggested) {
@@ -404,7 +538,7 @@ void handleNotFound(){server.send(404,"text/plain","not found");}
 void setup() {
     esp_uno_r4_setup();
     delay(50);
-    logLine("Wall-Z Brain v0.3.0 ESP32-S3 boot");
+    logLine("Wall-Z Brain v0.4.0 ESP32-S3 boot");
     visionFsReady = SPIFFS.begin(true);
     logLine(visionFsReady ? "Vision dataset FS ready" : "Vision dataset FS unavailable");
     ra_link::begin();
@@ -414,6 +548,8 @@ void setup() {
     else logLine("Brain memory new");
     if (visual_store::load(visualMemory)) logLine("Visual concept memory restored");
     else logLine("Visual concept memory new");
+    if (imitation_store::load(imitationMemory)) logLine("PS4 imitation memory restored");
+    else logLine("PS4 imitation memory new");
 
     connectWifi(kWifiConnectTimeoutMs);
 
@@ -430,6 +566,11 @@ void setup() {
     server.on("/api/vision/concepts/reset",HTTP_POST,handleVisionResetConcepts);
     server.on("/api/vision/dataset",HTTP_GET,handleVisionDataset);
     server.on("/api/vision/dataset/reset",HTTP_POST,handleVisionDatasetReset);
+    server.on("/api/imitation",HTTP_GET,handleImitation);
+    server.on("/api/imitation/policy",HTTP_POST,handleImitationPolicy);
+    server.on("/api/imitation/reset",HTTP_POST,handleImitationReset);
+    server.on("/api/imitation/dataset",HTTP_GET,handleImitationDataset);
+    server.on("/api/imitation/dataset/reset",HTTP_POST,handleImitationDatasetReset);
     server.on("/api/brain",HTTP_GET,handleBrain);
     server.on("/api/brain/arm",HTTP_POST,handleArm);
     server.on("/api/brain/reward",HTTP_POST,handleReward);
@@ -461,12 +602,20 @@ void loop() {
         lastBrainObserveMs=now;
         brain.observe(fusedTelemetry(now));
     }
+    learnFromManualDemonstration(now);
     executeBrainAction(now);
+
+    if (imitationDirty && static_cast<uint32_t>(now-lastImitationPersistMs)>=kImitationPersistMs) {
+        lastImitationPersistMs=now;
+        if (imitation_store::save(imitationMemory)) imitationDirty=false;
+    }
 
     if (static_cast<uint32_t>(now-lastPersistMs)>=kPersistPeriodMs) {
         lastPersistMs=now;
         brain_store::save(brain);
         visual_store::save(visualMemory);
+        imitation_store::save(imitationMemory);
+        imitationDirty=false;
     }
 
     const bool nowUp=wifiConnected();

@@ -58,3 +58,23 @@ Brain v0.3 additions
 8. TinyML
    - tools/train_wallz_visual_tinyml.py is a real TensorFlow training/export path for collected Wall-Z data.
    - v0.3 runtime does not claim generic person detection without a real trained model.
+
+Brain v0.4 additions
+--------------------
+9. PS4 imitation learning is observation-only during manual control
+   - RA sends D,ms,lx,ly,rx,ry,drive_active,head_active to onboard S3.
+   - Existing PS4 motor/servo code still executes directly on the RA4M1.
+   - The D side channel must never become a direct motor-control route.
+10. Imitation policy defaults to SHADOW
+   - Automatic PS4 demonstration collection is always safe to use while manual driving.
+   - Learned imitation actions are executed only when BOTH Brain autonomy is armed AND
+     imitation policy is explicitly enabled AND confidence >= 680/1000.
+11. Safety precedence remains unchanged
+   - Obstacle => BRAKE before any imitation prediction.
+   - RA4M1 still independently enforces manual override, robot-mode lockout,
+     heartbeat, movement deadlines and forward sonar clearance.
+12. Imitation memory/data
+   - Bounded 96-sample quantized k-NN memory, persistent in S3 NVS.
+   - Near-duplicate demonstrations are rejected to limit memory churn.
+   - Accepted demonstrations are also appended to /imitation_dataset.csv in SPIFFS.
+   - tools/train_wallz_imitation_tinyml.py is optional; v0.4 runtime does not depend on TensorFlow.

@@ -57,6 +57,8 @@ static uint32_t lastHeadMs = 0;
 static bool stickDriving = false;
 static int lastLX = 0;
 static int lastLY = 0;
+static int lastDriveIntentX = 0;
+static int lastDriveIntentY = 0;
 static int lastRX = 0;
 static int lastRY = 0;
 static int headTargetXY = 90;
@@ -87,11 +89,15 @@ static void applyTankOutput(const Ps4TankOutput& tank) {
 		stickDriving = false;
 		lastLX = 0;
 		lastLY = 0;
+		lastDriveIntentX = 0;
+		lastDriveIntentY = 0;
 		return;
 	}
 
 	int left = tank.leftVel;
 	int right = tank.rightVel;
+	lastDriveIntentX = (right - left) / 2;
+	lastDriveIntentY = (left + right) / 2;
 	if (left < 0) {
 		digitalWrite(L_ROT, HIGH);
 	} else {
@@ -225,6 +231,19 @@ bool PS4::isManualControlActive() {
         }
     }
     return false;
+}
+
+Ps4ManualSnapshot PS4::manualSnapshot() {
+    const uint32_t now = millis();
+    Ps4ManualSnapshot out;
+    out.ms = now;
+    out.lx = lastDriveIntentX;
+    out.ly = lastDriveIntentY;
+    out.rx = lastRX;
+    out.ry = lastRY;
+    out.drive_active = stickDriving && lastDriveMs != 0 && (now - lastDriveMs) < 500;
+    out.head_active = lastHeadMs != 0 && (now - lastHeadMs) < 500 && ps4HeadStickActive(lastRX, lastRY);
+    return out;
 }
 
 void PS4::pollSerial() {

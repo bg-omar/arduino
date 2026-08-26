@@ -5,9 +5,12 @@
 #include <cstdlib>
 #include <cstring>
 
-// Wall-Z Brain v0.2 (v0.1-compatible) ASCII protocol over the internal RA4M1 <-> ESP32-S3 UART.
+// Wall-Z Brain v0.4 (v0.1-compatible) ASCII protocol over the internal RA4M1 <-> ESP32-S3 UART.
 // RA -> S3 telemetry:
 // T,ms,distance_mm,light_l,light_r,mic_l,mic_r,gx_mrad,gy_mrad,gz_mrad,head_xy,head_z,manual,robot_mode,brain_armed
+//
+// RA -> S3 manual demonstration side channel (v0.4):
+// D,ms,lx,ly,rx,ry,drive_active,head_active
 //
 // S3 -> RA commands:
 // B,HB
