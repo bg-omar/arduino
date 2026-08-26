@@ -1,0 +1,14 @@
+Wall-Z Brain v0.5.0 manifest
+============================
+
+Key v0.5 files:
+67c3cd0eb1ed107c14837e3335e49ee45112553e0cbcacafec28535d20df4092  include/wallz_camera_storage_protocol.h
+5cfd761f73c452490d76c5d8c1086446a25a55fc54e8b7ca021f72a8d3438700  src_esp32_fisheye/camera_storage_policy.h
+7ad4853a2159d6ff4791c4e3df1ea1bb83ec39af5cae0174638e3edc8ea0aa8d  src_esp32_fisheye/main_fisheye.cpp
+73f69f44a06d05ef647c09d52d3b1a0434f36eca59c91679697f021a65e51af2  src_esp32_r4/vision_link.h
+b69c55c13100aabd83c340daa590d48b213489fe0786477f1ddc2bf2c38cb042  src_esp32_r4/vision_link.cpp
+6fb604692d4f9738781432c3a45b7bc06e40343f01eec4dfcb6c773a0cabc63d  src_esp32_r4/main_esp.cpp
+3707af543d9a95dbef06a53a14bba8a3f744b260ba9a6652c3a2f081083a73ec  README_BRAIN_v0.5.0.md
+842615cf4c545726da996e741a99e4b02eb059954cf70fd10785471451f4fd4e  STORAGE_ARCHITECTURE_v0.5.0.md
+e20b004cb9aab7f80d366fade8946ef723e849a323eed9ce2008928efaad0ab5  WIRING_FISHEYE_SD_v0.5.0.txt
+39d13d446dc8d88d2074f48212963138cf1b3153ed406fb16cabd00a0d331ee4  VALIDATION_BRAIN_v0.5.0.txt

@@ -1,8 +1,11 @@
 Wall-Z source package for ChatGPT
 =================================
 
-This tree is the MERGED codebase:
-  - Brain v0.2.0 fisheye vision (perception-only ESP32-CAM node)
+This tree is the current MERGED codebase through Brain v0.5.0:
+  - v0.2 fisheye perception
+  - v0.3 teach-able visual memory
+  - v0.4 PS4 imitation learning
+  - v0.5 local-first fisheye microSD visual storage
   - plus local v0.1 safety / radar fixes that must NOT be undone
 
 Do not regress these fixes when proposing patches:
@@ -78,3 +81,21 @@ Brain v0.4 additions
    - Near-duplicate demonstrations are rejected to limit memory churn.
    - Accepted demonstrations are also appended to /imitation_dataset.csv in SPIFFS.
    - tools/train_wallz_imitation_tinyml.py is optional; v0.4 runtime does not depend on TensorFlow.
+
+
+Brain v0.5 additions
+--------------------
+13. Fisheye raw storage is local-first
+   - Dedicated fisheye ESP32-CAM uses its onboard microSD in SD_MMC 1-bit mode.
+   - Raw 160x120 grayscale PGM frames stay on the camera.
+   - Do not route raw camera frames through S3 or RA4M1.
+14. Fisheye SD/UART coexistence
+   - SD_MMC 1-bit uses GPIO14 CLK, GPIO15 CMD, GPIO2 D0.
+   - Fisheye UART is now GPIO13 TX -> S3 GPIO41 RX and GPIO4 RX <- S3 GPIO42 TX.
+   - Do not restore the old GPIO14 TX wiring: GPIO14 is SD clock in v0.5.
+15. Semantic feedback only
+   - S3 sends C,CTX and C,SAVE messages to enrich/select camera-local recordings.
+   - Fisheye can save significant-motion events even if Brain is offline.
+16. RA SD remains configuration/system storage
+   - Existing RA4M1 SPI SD and SETUP.TXT path remain unchanged.
+   - v0.5 does not mirror raw camera PGM files to RA SD.

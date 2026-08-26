@@ -1,0 +1,28 @@
+Wall-Z Brain v0.5.0 — fisheye ESP32-CAM + onboard microSD wiring
+=================================================================
+
+ESP32-CAM onboard SD slot
+-------------------------
+Use SD_MMC 1-bit mode:
+  GPIO14 = SD CLK
+  GPIO15 = SD CMD
+  GPIO2  = SD D0
+
+In 1-bit mode GPIO4, GPIO12 and GPIO13 are not used as SD data lines.
+
+Brain UART (changed from v0.4)
+-----------------------------
+ESP32-CAM fisheye GPIO13 TX  --->  UNO R4 onboard ESP32-S3 GPIO41 RX
+ESP32-CAM fisheye GPIO4  RX  <---  UNO R4 onboard ESP32-S3 GPIO42 TX
+ESP32-CAM fisheye GND         ----- UNO R4 GND
+
+Baud: 230400, 8N1
+Logic: 3.3 V on both ESP32 sides; no level shifter required.
+
+Important
+---------
+- GPIO4 is also associated with the AI-Thinker flash LED; do not use the flash LED in this mode.
+- Do NOT use the old v0.4 fisheye UART pin GPIO14: it is now the SD clock.
+- GPIO12 stays unused to avoid unnecessary boot-strapping risk.
+- RA4M1 Serial2 <-> onboard ESP32-S3 stays unchanged.
+- Existing RA4M1 SPI SD card stays unchanged for SETUP.TXT/config/logs.

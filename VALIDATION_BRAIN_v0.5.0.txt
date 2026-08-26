@@ -1,0 +1,87 @@
+Wall-Z Brain v0.5.0 Validation Report
+======================================
+
+Scope
+-----
+Baseline: Wall-Z Brain v0.4.0
+Target:   Wall-Z Brain v0.5.0
+Feature:  local-first raw visual experience storage on the dedicated fisheye ESP32-CAM microSD.
+
+Architecture validated
+----------------------
+- Fisheye raw 160x120 grayscale frames remain local to the ESP32-CAM SD card.
+- Camera SD uses SD_MMC 1-bit mode; raw frames are PGM P5 files.
+- Compact V/G telemetry continues fisheye -> onboard ESP32-S3.
+- Semantic context / SAVE commands flow onboard ESP32-S3 -> fisheye.
+- RA4M1 SPI SD remains unchanged for SETUP.TXT/config/compact logs.
+- No raw camera frames are sent to RA4M1 or its SD card.
+
+Host validation
+---------------
+PASS  Brain v0.3 regression standalone tests (C++17, -Wall -Wextra -Werror)
+PASS  Brain v0.4 imitation standalone tests
+PASS  Brain v0.5 camera storage standalone tests
+PASS  AddressSanitizer + UndefinedBehaviorSanitizer storage test
+PASS  Camera storage protocol parser tests
+PASS  Local-first automatic storage policy tests
+PASS  Fisheye v0.5 source strict C++17 syntax check against API stubs
+PASS  ESP32-S3 vision_link strict C++17 syntax check against API stubs
+PASS  ESP32-S3 main source strict C++17 syntax check against API stubs
+PASS  Python syntax: visual and imitation TinyML training tools
+PASS  Dashboard JavaScript syntax check (node --check)
+PASS  v0.4 -> v0.5 unified patch clean-room round-trip (patch -p1 + byte-for-byte compare)
+
+Storage policy defaults
+-----------------------
+- Offline Brain: auto-save when motion >= 220/1000.
+- Online Brain: auto-save moving unknowns when motion >= 90 and familiarity < 760/1000.
+- Online Brain: auto-save novel motion when motion >= 90 and novelty >= 560/1000.
+- Automatic save cooldown: 5000 ms.
+- Explicit teach/reward/manual anti-spam cooldown: 350 ms.
+- Missing/failing SD does not stop vision telemetry.
+
+Safety / authority invariants retained
+--------------------------------------
+- PS4/manual remains highest user-control authority.
+- RA4M1 retains motor, servo, heartbeat, sonar-forward, robot-mode and movement-deadline safety gates.
+- Fisheye remains perception/storage-only and has no motor authority.
+- Camera SD writes never occur inside the RA4M1 real-time motor/safety loop.
+- Imitation policy remains shadow-only by default.
+- Existing BRAKE / radar 500 cm / no-echo forward-clear behavior remains unchanged.
+
+Critical unchanged files vs v0.4.0
+----------------------------------
+PASS  src/motor.cpp
+      sha256 61f04b34bc8b2fccd61e87f8fec9afcba7032d289fd2f501298e3890cf339894
+PASS  src/pwm_board.cpp
+      sha256 020a5309c6972e19d1b880b7e2b44d3a002c5d86a2f299bb92996778ca6b6712
+PASS  src/robot_modes.cpp
+      sha256 b832d0b47dd1ab30a2e4add14adb5773984d37abe6bdd1cdb79ac071a368236b
+PASS  src/radar_scan.h
+      sha256 a7f9b1ed874360c51bb81349a49b1e1ebee624f4f2ece1913846218a2811a4c6
+PASS  src/main_ra.cpp
+      sha256 d19ce69ebc9c3969d65fc34ec12f26a8a44b0a6576bece4559ed7b3c6e3b219c
+PASS  src/brain_link.cpp
+      sha256 0fc98461a5a78ac52dd670b9ce8c90f503f752a0e3d955ed52d0b03df1b6ea68
+PASS  src/SD_card.cpp
+      sha256 dcf7f71a6379a4b013023013ecb504524d3577db46325add849fcca71050cbaa
+PASS  src_esp32_ps4/main_ps4.cpp
+      sha256 2e00649ffde1b623a9f9949ae4feca1dbce53ea32f5d2a6427d5a36377959a4d
+
+Fisheye wiring change
+---------------------
+- SD_MMC 1-bit: GPIO14 CLK, GPIO15 CMD, GPIO2 D0.
+- Fisheye UART: GPIO13 TX -> S3 GPIO41 RX.
+- Fisheye UART: GPIO4 RX <- S3 GPIO42 TX.
+- Old v0.4 GPIO14 UART TX wiring MUST NOT be retained because GPIO14 is now SD clock.
+
+Target-build limitation
+-----------------------
+NOT RUN: real PlatformIO builds for RA4M1 / onboard ESP32-S3 / ESP32-CAM targets.
+Reason: PlatformIO CLI (pio) is not installed in this execution environment.
+Use run_all.cmd on the development machine to perform the actual target compiles.
+
+Result
+------
+HOST / STATIC VALIDATION: PASS
+HARDWARE TARGET BUILD:     NOT RUN (toolchain unavailable here)

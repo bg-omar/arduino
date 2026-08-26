@@ -15,11 +15,27 @@ uint32_t sLastTelemetryLocalMs = 0;
 VisionGridSnapshot sGrid{};
 bool sHaveGrid = false;
 uint32_t sLastGridLocalMs = 0;
+CameraStorageStatus sStorage{};
+bool sHaveStorage = false;
+uint32_t sLastStorageLocalMs = 0;
 char sLine[704] = {};
 uint16_t sLinePos = 0;
 char sLastMessage[64] = "none";
 
 void sendLine(const char* line) { Serial2.println(line); }
+
+const char* safeToken(const char* s, const char* fallback) {
+    if (!s || !*s) return fallback;
+    for (const char* p=s; *p; ++p) {
+        const unsigned char c = static_cast<unsigned char>(*p);
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '-' || c == '_';
+        if (!ok) return fallback;
+    }
+    return s;
+}
+
+int clampInt(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
 void handleLine(char* line, uint32_t now) {
     VisionTelemetry t;
@@ -36,6 +52,13 @@ void handleLine(char* line, uint32_t now) {
         sLastGridLocalMs = now;
         return;
     }
+    CameraStorageStatus st;
+    if (wallzParseStorageStatus(line, st)) {
+        sStorage = st;
+        sHaveStorage = true;
+        sLastStorageLocalMs = now;
+        return;
+    }
     if (strncmp(line, "FISHEYE,", 8) == 0 || strncmp(line, "VA,", 3) == 0) {
         strncpy(sLastMessage, line, sizeof(sLastMessage) - 1);
         sLastMessage[sizeof(sLastMessage) - 1] = '\0';
@@ -46,13 +69,15 @@ void handleLine(char* line, uint32_t now) {
 namespace vision_link {
 void begin() {
     Serial2.setRxBufferSize(2048);
-    Serial2.setTxBufferSize(512);
+    Serial2.setTxBufferSize(1024);
     Serial2.begin(kVisionBaud, SERIAL_8N1, kVisionRxPin, kVisionTxPin);
     sHaveTelemetry = false;
     sHaveGrid = false;
+    sHaveStorage = false;
     sLinePos = 0;
     sendLine("C,PING");
     sendLine("C,GRID,2");
+    sendLine("C,SDSTATUS");
 }
 
 void poll(uint32_t now) {
@@ -90,22 +115,44 @@ uint32_t gridAge(uint32_t now) {
     return sHaveGrid ? static_cast<uint32_t>(now - sLastGridLocalMs) : 0xFFFFFFFFu;
 }
 
+bool hasStorageStatus() { return sHaveStorage; }
+const CameraStorageStatus& storageStatus() { return sStorage; }
+uint32_t storageStatusAge(uint32_t now) {
+    return sHaveStorage ? static_cast<uint32_t>(now - sLastStorageLocalMs) : 0xFFFFFFFFu;
+}
+
 void ping() { sendLine("C,PING"); }
 void setThreshold(int value) {
-    if (value < 2) value = 2;
-    if (value > 96) value = 96;
+    value = clampInt(value, 2, 96);
     char b[32]; snprintf(b, sizeof(b), "C,THR,%d", value); sendLine(b);
 }
 void setRate(int fps) {
-    if (fps < 5) fps = 5;
-    if (fps > 40) fps = 40;
+    fps = clampInt(fps, 5, 40);
     char b[32]; snprintf(b, sizeof(b), "C,RATE,%d", fps); sendLine(b);
 }
 void setGridRate(int fps) {
-    if (fps < 1) fps = 1;
-    if (fps > 5) fps = 5;
+    fps = clampInt(fps, 1, 5);
     char b[32]; snprintf(b, sizeof(b), "C,GRID,%d", fps); sendLine(b);
 }
 void requestSnapshot() { sendLine("C,SNAPSHOT"); }
 void setDebug(bool on) { sendLine(on ? "C,DEBUG,1" : "C,DEBUG,0"); }
+
+void sendContext(const char* label, int familiarity, int novelty, int valueMilli) {
+    char b[96];
+    snprintf(b, sizeof(b), "C,CTX,%s,%d,%d,%d",
+             safeToken(label, "unknown"),
+             clampInt(familiarity, 0, 1000),
+             clampInt(novelty, 0, 1000),
+             clampInt(valueMilli, -1000, 1000));
+    sendLine(b);
+}
+
+void requestStore(const char* reason, const char* label) {
+    char b[80];
+    snprintf(b, sizeof(b), "C,SAVE,%s,%s", safeToken(reason, "manual"), safeToken(label, "unknown"));
+    sendLine(b);
+}
+
+void setStorageEnabled(bool on) { sendLine(on ? "C,SD,1" : "C,SD,0"); }
+void requestStorageStatus() { sendLine("C,SDSTATUS"); }
 }

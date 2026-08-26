@@ -1,5 +1,5 @@
 /*
- * Wall-Z Brain v0.4.0 — onboard ESP32-S3
+ * Wall-Z Brain v0.5.0 — onboard ESP32-S3
  *
  * Responsibilities:
  *   - keep UNO R4 USB CDC/CMSIS-DAP bridge active via ESP_UNO_R4
@@ -74,7 +74,7 @@ const char kIndexHtml[] PROGMEM = R"HTML(<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Wall-Z Brain v0.3</title>
+<title>Wall-Z Brain v0.5</title>
 <style>
 :root{color-scheme:dark} body{font-family:system-ui,sans-serif;margin:1rem;background:#101114;color:#eee;max-width:1000px}
 h1{font-size:1.35rem;margin-bottom:.3rem} h2{font-size:1rem;margin-top:1.4rem}
@@ -86,15 +86,15 @@ small{opacity:.65}.armed{color:#8f8}.off{color:#aaa}.warn{color:#f99}
 </style>
 </head>
 <body>
-<h1>Wall-Z Brain v0.4.0</h1><small>RA4M1 owns motors/safety. ESP32-S3 observes, learns visual concepts and learns from your PS4 demonstrations.</small>
+<h1>Wall-Z Brain v0.5.0</h1><small>RA4M1 owns motors/safety. Fisheye stores raw visual experience locally; ESP32-S3 adds semantic context, learning and policy.</small>
 <div class="grid">
 <section class="card"><h2>Robot</h2><dl>
 <dt>RA link</dt><dd id="ra">-</dd><dt>distance</dt><dd id="dist">-</dd><dt>light L/R</dt><dd id="light">-</dd><dt>mic L/R</dt><dd id="mic">-</dd><dt>gyro mrad/s</dt><dd id="gyro">-</dd><dt>head</dt><dd id="head">-</dd><dt>manual</dt><dd id="manual">-</dd><dt>robot mode</dt><dd id="robotmode">-</dd><dt>brain armed</dt><dd id="armed">-</dd></dl>
 <button class="good" onclick="post('/api/brain/arm?on=1')">ARM brain</button><button onclick="post('/api/brain/arm?on=0')">Disarm</button><button class="danger" onclick="post('/api/robot/stop')">STOP</button></section>
 <section class="card"><h2>Fisheye vision + memory</h2><dl>
-<dt>link</dt><dd id="visionlink">-</dd><dt>motion</dt><dd id="vmotion">-</dd><dt>attention x/y</dt><dd id="vxy">-</dd><dt>brightness</dt><dd id="vbright">-</dd><dt>contrast</dt><dd id="vcontrast">-</dd><dt>fps</dt><dd id="vfps">-</dd><dt>grid</dt><dd id="vgrid">-</dd><dt>concept</dt><dd id="vconcept">unknown</dd><dt>familiarity</dt><dd id="vfamiliarity">0</dd><dt>concept value</dt><dd id="vvalue">0</dd><dt>concepts</dt><dd id="vconcepts">0</dd></dl>
-<button onclick="post('/api/vision/ping')">Ping camera</button><button onclick="post('/api/vision/snapshot')">Snapshot</button><button onclick="post('/api/vision/threshold?v=18')">Default threshold</button>
-<p><input id="teachlabel" maxlength="15" placeholder="person / ball / door"><button class="good" onclick="teach()">Teach current view</button><button class="danger" onclick="post('/api/vision/concepts/reset')">Forget all</button></p><p><a href="/api/vision/dataset"><button>Download TinyML data</button></a><button onclick="post('/api/vision/dataset/reset')">Clear dataset</button></p><small>Teach 3–8 examples from slightly different poses for a more stable concept. Each teach also records a labelled grid for later TensorFlow training.</small></section>
+<dt>link</dt><dd id="visionlink">-</dd><dt>motion</dt><dd id="vmotion">-</dd><dt>attention x/y</dt><dd id="vxy">-</dd><dt>brightness</dt><dd id="vbright">-</dd><dt>contrast</dt><dd id="vcontrast">-</dd><dt>fps</dt><dd id="vfps">-</dd><dt>grid</dt><dd id="vgrid">-</dd><dt>concept</dt><dd id="vconcept">unknown</dd><dt>familiarity</dt><dd id="vfamiliarity">0</dd><dt>concept value</dt><dd id="vvalue">0</dd><dt>concepts</dt><dd id="vconcepts">0</dd><dt>camera SD</dt><dd id="vsd">-</dd><dt>SD used</dt><dd id="vsdused">-</dd><dt>stored frames</dt><dd id="vsdframes">0</dd><dt>SD events/errors</dt><dd id="vsdevents">0 / 0</dd></dl>
+<button onclick="post('/api/vision/ping')">Ping camera</button><button onclick="post('/api/vision/snapshot')">Grid snapshot</button><button onclick="post('/api/vision/store')">Store raw frame</button><button onclick="post('/api/vision/threshold?v=18')">Default threshold</button><p><button class="good" onclick="post('/api/vision/storage?on=1')">Camera SD auto ON</button><button onclick="post('/api/vision/storage?on=0')">Camera SD auto OFF</button></p>
+<p><input id="teachlabel" maxlength="15" placeholder="person / ball / door"><button class="good" onclick="teach()">Teach + store current view</button><button class="danger" onclick="post('/api/vision/concepts/reset')">Forget all</button></p><p><a href="/api/vision/dataset"><button>Download S3 TinyML grid data</button></a><button onclick="post('/api/vision/dataset/reset')">Clear dataset</button></p><small>Raw 160×120 grayscale PGM frames are stored locally on the fisheye microSD. The S3 retains compact grids/labels for learning and sends context back to the camera.</small></section>
 <section class="card"><h2>Imitation learning</h2><dl>
 <dt>PS4 demo</dt><dd id="idemostate">-</dd><dt>learned samples</dt><dd id="isamples">0</dd><dt>prediction</dt><dd id="ipred">idle</dd><dt>confidence</dt><dd id="iconf">0</dd><dt>nearest</dt><dd id="inear">-</dd><dt>policy</dt><dd id="ipolicy">shadow</dd></dl>
 <button class="good" onclick="post('/api/imitation/policy?on=1')">Use imitation</button><button onclick="post('/api/imitation/policy?on=0')">Shadow only</button><button class="danger" onclick="post('/api/imitation/reset')">Forget driving</button><p><a href="/api/imitation/dataset"><button>Download PS4 dataset</button></a><button onclick="post('/api/imitation/dataset/reset')">Clear dataset</button></p><small>Drive Wall-Z normally with PS4. The S3 observes your action + sensor/vision state. Execution still requires Brain ARM and RA4M1 safety approval.</small></section>
@@ -117,7 +117,7 @@ async function tick(){try{
  const [s,r,v,b,i,l]=await Promise.all([fetch('/api/status').then(x=>x.json()),fetch('/api/robot').then(x=>x.json()),fetch('/api/vision').then(x=>x.json()),fetch('/api/brain').then(x=>x.json()),fetch('/api/imitation').then(x=>x.json()),fetch('/api/log').then(x=>x.json())]);
  wifi.textContent=s.wifi;ip.textContent=s.ip;ssid.textContent=s.ssid;rssi.textContent=s.rssi+' dBm';heap.textContent=s.heap;ntp.textContent=s.ntp;
  ra.textContent=r.online?'online ('+r.age_ms+' ms)':'offline';dist.textContent=r.distance_mm<0?'n/a':r.distance_mm+' mm';light.textContent=r.light_l+' / '+r.light_r;mic.textContent=r.mic_l+' / '+r.mic_r;gyro.textContent=r.gx+' / '+r.gy+' / '+r.gz;head.textContent=r.head_xy+' / '+r.head_z;manual.textContent=r.manual?'ACTIVE':'no';robotmode.textContent=r.robot_mode?'ACTIVE':'no';armed.textContent=r.brain_armed?'YES':'no';armed.className=r.brain_armed?'armed':'off';ack.textContent=r.ack;
- visionlink.textContent=v.online?'online ('+v.age_ms+' ms)':'offline';vmotion.textContent=v.motion+'/1000';vxy.textContent=v.x+' / '+v.y;vbright.textContent=v.brightness;vcontrast.textContent=v.contrast;vfps.textContent=(v.fps_x10/10).toFixed(1);vgrid.textContent=v.grid_online?'online ('+v.grid_age_ms+' ms)':'offline';vconcept.textContent=v.concept;vfamiliarity.textContent=v.familiarity+'/1000';vvalue.textContent=v.concept_value;vconcepts.textContent=v.concepts;
+ visionlink.textContent=v.online?'online ('+v.age_ms+' ms)':'offline';vmotion.textContent=v.motion+'/1000';vxy.textContent=v.x+' / '+v.y;vbright.textContent=v.brightness;vcontrast.textContent=v.contrast;vfps.textContent=(v.fps_x10/10).toFixed(1);vgrid.textContent=v.grid_online?'online ('+v.grid_age_ms+' ms)':'offline';vconcept.textContent=v.concept;vfamiliarity.textContent=v.familiarity+'/1000';vvalue.textContent=v.concept_value;vconcepts.textContent=v.concepts;vsd.textContent=v.sd_status?(v.sd_mounted?'mounted':'missing'):'unknown';vsdused.textContent=v.sd_status?(v.sd_used_mb+' / '+v.sd_total_mb+' MB'):'-';vsdframes.textContent=v.sd_frames;vsdevents.textContent=v.sd_events+' / '+v.sd_errors;
  idemostate.textContent=i.demo_online?'active ('+i.demo_age_ms+' ms)':'idle';isamples.textContent=i.samples;ipred.textContent=i.prediction;iconf.textContent=i.confidence+'/1000';inear.textContent=i.nearest;ipolicy.textContent=i.policy?'enabled':'shadow';
  context.textContent=b.context;action.textContent=b.suggestion+(b.autonomy?' [AUTO]':' [shadow]');obs.textContent=b.observations;rewards.textContent=b.rewards;bar('novelty',b.novelty);bar('curiosity',b.curiosity);bar('arousal',b.arousal);bar('confidence',b.confidence);valence.textContent=b.valence.toFixed(3);document.getElementById('log').textContent=(l.lines||[]).join('\n');
 }catch(e){}}
@@ -237,14 +237,23 @@ void handleVision() {
     const bool online = vision_link::online(now);
     const VisionTelemetry& v = vision_link::telemetry();
     const VisualRecognition& r = visualMemory.current();
-    char json[640];
+    const bool haveSd = vision_link::hasStorageStatus();
+    const CameraStorageStatus& sd = vision_link::storageStatus();
+    char json[1024];
     snprintf(json, sizeof(json),
-        "{\"online\":%s,\"age_ms\":%lu,\"motion\":%d,\"x\":%d,\"y\":%d,\"brightness\":%d,\"contrast\":%d,\"fps_x10\":%d,\"flags\":%lu,\"grid_online\":%s,\"grid_age_ms\":%lu,\"concept\":\"%s\",\"familiarity\":%d,\"concept_value\":%d,\"concepts\":%d,\"message\":\"%s\"}",
+        "{\"online\":%s,\"age_ms\":%lu,\"motion\":%d,\"x\":%d,\"y\":%d,\"brightness\":%d,\"contrast\":%d,\"fps_x10\":%d,\"flags\":%lu,\"grid_online\":%s,\"grid_age_ms\":%lu,\"concept\":\"%s\",\"familiarity\":%d,\"concept_value\":%d,\"concepts\":%d,\"sd_status\":%s,\"sd_status_age_ms\":%lu,\"sd_mounted\":%s,\"sd_total_mb\":%lu,\"sd_used_mb\":%lu,\"sd_frames\":%lu,\"sd_events\":%lu,\"sd_errors\":%lu,\"message\":\"%s\"}",
         online ? "true" : "false", static_cast<unsigned long>(vision_link::telemetryAge(now)),
         v.motion, v.x, v.y, v.brightness, v.contrast, v.fps_x10, static_cast<unsigned long>(v.flags),
         vision_link::gridOnline(now) ? "true" : "false", static_cast<unsigned long>(vision_link::gridAge(now)),
         r.label, r.index >= 0 ? r.score : 0, r.index >= 0 ? r.value_milli : 0,
-        visualMemory.conceptCount(), vision_link::lastMessage());
+        visualMemory.conceptCount(), haveSd ? "true" : "false",
+        static_cast<unsigned long>(vision_link::storageStatusAge(now)),
+        haveSd && sd.mounted ? "true" : "false",
+        static_cast<unsigned long>(haveSd ? sd.total_mb : 0),
+        static_cast<unsigned long>(haveSd ? sd.used_mb : 0),
+        static_cast<unsigned long>(haveSd ? sd.frames : 0),
+        static_cast<unsigned long>(haveSd ? sd.events : 0),
+        static_cast<unsigned long>(haveSd ? sd.errors : 0), vision_link::lastMessage());
     server.send(200, "application/json", json);
 }
 
@@ -258,6 +267,19 @@ void handleVisionThreshold() {
 void handleVisionSnapshot() {
     vision_link::requestSnapshot();
     server.send(200,"application/json","{\"snapshot\":true}");
+}
+
+void handleVisionStore() {
+    const VisualRecognition& r = visualMemory.current();
+    vision_link::requestStore("manual", r.index >= 0 ? r.label : "unknown");
+    server.send(200,"application/json","{\"store\":true}");
+}
+
+void handleVisionStorage() {
+    const bool on = !server.hasArg("on") || server.arg("on").toInt() != 0;
+    vision_link::setStorageEnabled(on);
+    vision_link::requestStorageStatus();
+    server.send(200,"application/json",on?"{\"storage\":true}":"{\"storage\":false}");
 }
 
 bool appendVisionTrainingSample(const char* label) {
@@ -289,7 +311,9 @@ void handleVisionTeach() {
     visual_store::save(visualMemory);
     if (!appendVisionTrainingSample(label.c_str())) logLine("Visual concept taught; dataset write unavailable");
     else logLine("Visual concept taught + training sample");
-    server.send(200,"application/json","{\"teach\":true}");
+    vision_link::sendContext(label.c_str(), 1000, 0, visualMemory.current().value_milli);
+    vision_link::requestStore("teach", label.c_str());
+    server.send(200,"application/json","{\"teach\":true,\"camera_store\":true}");
 }
 
 void handleVisionResetConcepts() {
@@ -446,8 +470,14 @@ void handleReward() {
     visualMemory.rewardCurrent(v);
     brain_store::save(brain);
     visual_store::save(visualMemory);
+    const VisualRecognition& vr = visualMemory.current();
+    const char* rewardLabel = vr.index >= 0 ? vr.label : "unknown";
+    vision_link::sendContext(rewardLabel, vr.index >= 0 ? vr.score : 0,
+                             vr.index >= 0 ? 1000 - vr.score : 1000,
+                             vr.index >= 0 ? vr.value_milli : 0);
+    vision_link::requestStore(v >= 0.0f ? "reward_pos" : "reward_neg", rewardLabel);
     char line[64]; snprintf(line,sizeof(line),"Brain reward %.2f",v); logLine(line);
-    server.send(200,"application/json","{\"reward\":true}");
+    server.send(200,"application/json","{\"reward\":true,\"camera_store\":true}");
 }
 
 void handleResetBrain() {
@@ -538,12 +568,12 @@ void handleNotFound(){server.send(404,"text/plain","not found");}
 void setup() {
     esp_uno_r4_setup();
     delay(50);
-    logLine("Wall-Z Brain v0.4.0 ESP32-S3 boot");
+    logLine("Wall-Z Brain v0.5.0 ESP32-S3 boot");
     visionFsReady = SPIFFS.begin(true);
     logLine(visionFsReady ? "Vision dataset FS ready" : "Vision dataset FS unavailable");
     ra_link::begin();
     vision_link::begin();
-    logLine("Fisheye UART2 GPIO41/42 @230400");
+    logLine("Fisheye UART2 S3 GPIO41/42 @230400; camera SD local-first");
     if (brain_store::load(brain)) logLine("Brain memory restored");
     else logLine("Brain memory new");
     if (visual_store::load(visualMemory)) logLine("Visual concept memory restored");
@@ -561,6 +591,8 @@ void setup() {
     server.on("/api/vision/ping",HTTP_POST,handleVisionPing);
     server.on("/api/vision/threshold",HTTP_POST,handleVisionThreshold);
     server.on("/api/vision/snapshot",HTTP_POST,handleVisionSnapshot);
+    server.on("/api/vision/store",HTTP_POST,handleVisionStore);
+    server.on("/api/vision/storage",HTTP_POST,handleVisionStorage);
     server.on("/api/vision/teach",HTTP_POST,handleVisionTeach);
     server.on("/api/vision/concepts",HTTP_GET,handleVisionConcepts);
     server.on("/api/vision/concepts/reset",HTTP_POST,handleVisionResetConcepts);
@@ -595,7 +627,15 @@ void loop() {
 
     if (vision_link::hasGrid() && vision_link::grid().seq != lastObservedGridSeq) {
         lastObservedGridSeq = vision_link::grid().seq;
-        visualMemory.observe(vision_link::grid());
+        const VisualRecognition vr = visualMemory.observe(vision_link::grid());
+        const int familiarity = vr.index >= 0 ? vr.score : 0;
+        const int visualNovelty = vr.index >= 0 ? 1000 - vr.score : 1000;
+        int brainNovelty = static_cast<int>(brain.metrics().novelty * 1000.0f + 0.5f);
+        if (brainNovelty < 0) brainNovelty = 0;
+        if (brainNovelty > 1000) brainNovelty = 1000;
+        const int novelty = visualNovelty > brainNovelty ? visualNovelty : brainNovelty;
+        vision_link::sendContext(vr.index >= 0 ? vr.label : "unknown", familiarity, novelty,
+                                 vr.index >= 0 ? vr.value_milli : 0);
     }
 
     if (ra_link::hasTelemetry() && static_cast<uint32_t>(now-lastBrainObserveMs)>=100) {
