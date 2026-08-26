@@ -4,6 +4,7 @@
 #include <cstdint>
 #include "brain_protocol.h"
 #include "manual_demo.h"
+#include "user_mode_protocol.h"
 
 namespace ra_link {
 void begin();
@@ -18,6 +19,8 @@ const char* lastAck();
 bool hasDemonstration();
 const ManualDemonstration& demonstration();
 uint32_t demonstrationAge(uint32_t now);
+
+RaUserModeRequest takeUserModeRequest();
 
 void arm(bool enable);
 void stop();

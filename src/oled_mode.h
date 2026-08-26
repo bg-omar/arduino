@@ -28,6 +28,8 @@ enum class OledMode : uint8_t {
 
 	None = 4,
 
+	AutonomyMenu = 5,
+
 	SenseReact = 6,
 
 	Avoid = 7,
@@ -92,4 +94,3 @@ inline bool oledMayDrawAvoid(OledMode mode) {
 
 
 #endif // OLED_MODE_H
-

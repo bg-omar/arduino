@@ -17,6 +17,7 @@
 #include "motor.h"
 #include "pwm_board.h"
 #include "robot_modes.h"
+#include "shared_control.h"
 
 namespace {
 constexpr uint32_t kTelemetryPeriodMs = 100;
@@ -24,6 +25,7 @@ constexpr uint32_t kHeartbeatTimeoutMs = 1200;
 constexpr uint32_t kMaxMoveMs = 350;
 
 bool sArmed = false;
+bool sManualOverride = false;
 bool sMoveActive = false;
 uint32_t sMoveDeadlineMs = 0;
 uint32_t sLastHeartbeatMs = 0;
@@ -46,8 +48,15 @@ void sendAck(const char* text) {
     SERIAL_AT.println(text);
 }
 
+bool ps4DriveManualActive() {
+    return PS4::manualSnapshot().drive_active;
+}
+
 void cancelBrainMotion(bool stopMotor) {
-    if (stopMotor && sMoveActive && !PS4::isManualControlActive()) {
+    // A manual DRIVE command may already have replaced the motor PWM, so a
+    // Brain stop must not overwrite it. Head-only manual input does not own
+    // the motors and therefore does not suppress a required motor stop.
+    if (stopMotor && sMoveActive && !ps4DriveManualActive()) {
         Motor::Car_Stop();
     }
     sMoveActive = false;
@@ -58,18 +67,18 @@ void setArmed(bool armed, uint32_t now) {
     if (!armed) {
         cancelBrainMotion(true);
         sArmed = false;
+        sManualOverride = false;
         sendAck("ARM,0");
         return;
     }
-    if (PS4::isManualControlActive()) {
-        sendAck("REJECT,MANUAL");
-        return;
-    }
+    // v0.6: an already-connected PS4 is compatible with Brain autonomy.
+    // Active manual input temporarily owns the actuators; arming is retained.
     if (robot_modes::anyActive()) {
         sendAck("REJECT,ROBOTMODE");
         return;
     }
     sArmed = true;
+    sManualOverride = PS4::isManualControlActive();
     sLastHeartbeatMs = now;
     sendAck("ARM,1");
 }
@@ -109,9 +118,9 @@ void applyMove(char direction, uint32_t durationMs, uint32_t now) {
         return;
     }
     if (PS4::isManualControlActive()) {
-        sArmed = false;
         cancelBrainMotion(false);
-        sendAck("REJECT,MANUAL");
+        sManualOverride = true;
+        sendAck("REJECT,MANUAL_OVERRIDE");
         return;
     }
     if (robot_modes::anyActive()) {
@@ -171,8 +180,13 @@ void handleCommand(char* line, uint32_t now) {
         return;
     }
     if (strcmp(token, "HEAD") == 0) {
-        if (!sArmed || PS4::isManualControlActive() || robot_modes::anyActive()) {
+        if (!sArmed || robot_modes::anyActive()) {
             sendAck("REJECT,HEAD_LOCK");
+            return;
+        }
+        if (PS4::isManualControlActive()) {
+            sManualOverride = true;
+            sendAck("REJECT,MANUAL_OVERRIDE");
             return;
         }
         char* xy = strtok_r(nullptr, ",", &save);
@@ -253,22 +267,29 @@ void sendTelemetry(uint32_t now) {
 namespace brain_link {
 void begin() {
     sArmed = false;
+    sManualOverride = false;
     sMoveActive = false;
     sLastHeartbeatMs = millis();
     sLastTelemetryMs = 0;
-    SERIAL_AT.println("RA,HELLO,BRAIN,0.4.0");
+    SERIAL_AT.println("RA,HELLO,BRAIN,0.6.0");
 }
 
 void poll(uint32_t now) {
     pollCommands(now);
 
-    if (PS4::isManualControlActive() && sArmed) {
-        // Manual control always wins. Do not issue a motor STOP here because
-        // that could overwrite the PS4 command that was just applied.
-        sArmed = false;
-        sMoveActive = false;
-        sMoveDeadlineMs = 0;
-        sendAck("DISARM,MANUAL");
+    const Ps4ManualSnapshot manual = PS4::manualSnapshot();
+    const bool manualNow = manual.drive_active || manual.head_active;
+    if (manualNow && sArmed) {
+        // Shared control: the PS4 owns the actuators only while there is real
+        // manual input. A drive command already replaces motor PWM, so clear
+        // the old Brain pulse without STOP. For head-only input, keep any
+        // existing Brain move deadline intact so it still expires safely.
+        if (manual.drive_active) cancelBrainMotion(false);
+        if (!sManualOverride) sendAck("PAUSE,MANUAL");
+        sManualOverride = true;
+    } else if (!manualNow && sManualOverride) {
+        sManualOverride = false;
+        if (sArmed) sendAck("RESUME,BRAIN");
     }
 
     if (sArmed && static_cast<uint32_t>(now - sLastHeartbeatMs) > kHeartbeatTimeoutMs) {
@@ -292,4 +313,34 @@ void tick(uint32_t now) {
 }
 
 bool isArmed() { return sArmed; }
+
+void userStop() {
+    cancelBrainMotion(true);
+    sArmed = false;
+    sManualOverride = false;
+    Motor::Car_Stop();
+    SERIAL_AT.println("U,MODE,STOP");
+    sendAck("USER,STOP");
+}
+
+void userStartBrain(bool imitation) {
+    if (robot_modes::anyActive()) {
+        sendAck("REJECT,ROBOTMODE");
+        return;
+    }
+    setArmed(true, millis());
+    SERIAL_AT.println(imitation ? "U,MODE,IMITATION" : "U,MODE,BRAIN");
+}
+
+void userSelectRobotMode(const char* mode) {
+    cancelBrainMotion(true);
+    sArmed = false;
+    sManualOverride = false;
+    if (mode && mode[0] != '\0') {
+        SERIAL_AT.print("U,MODE,");
+        SERIAL_AT.println(mode);
+    } else {
+        SERIAL_AT.println("U,MODE,STOP");
+    }
+}
 }

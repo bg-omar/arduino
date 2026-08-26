@@ -1,0 +1,44 @@
+Wall-Z Brain v0.6.0 validation
+================================
+
+Scope
+-----
+- shared PS4/Brain authority
+- OPTIONS autonomy stop/menu
+- RA->S3 runtime mode synchronization
+- regression preservation of v0.5 fisheye local-SD architecture
+
+Host tests
+----------
+PASS  brain v0.3 standalone regression
+PASS  imitation v0.4 standalone regression
+PASS  camera storage v0.5 standalone regression
+PASS  v0.6 shared-control arbitration
+PASS  v0.6 RA->S3 user-mode protocol
+PASS  AddressSanitizer + UndefinedBehaviorSanitizer on brain/imitation host tests
+PASS  git diff whitespace check with CRLF treated as EOL
+
+Authority invariants checked
+----------------------------
+PASS  legacy DISARM,MANUAL behavior removed
+PASS  Brain ARM no longer rejects merely because PS4 input is active
+PASS  manual drive cancels outstanding Brain pulse without issuing a STOP over PS4 PWM
+PASS  head-only manual input does not orphan a Brain motor pulse; its original <=350 ms deadline remains active
+PASS  neutral PS4 telemetry makes the S3 resume Brain scheduling immediately
+PASS  RA robot modes still exclude Brain autonomy
+PASS  OPTIONS explicitly stops Brain + RA robot modes before opening runtime menu
+
+v0.5 regression hashes
+----------------------
+PASS  src_esp32_fisheye/main_fisheye.cpp unchanged
+PASS  src_esp32_fisheye/camera_storage_policy.h unchanged
+PASS  src/SD_card.cpp unchanged
+PASS  src/motor.cpp unchanged
+PASS  src/pwm_board.cpp unchanged
+PASS  src/robot_modes.cpp unchanged
+PASS  src_esp32_ps4/main_ps4.cpp unchanged
+
+PlatformIO target build
+-----------------------
+NOT RUN in this execution environment: `pio` is not installed.
+Run `run_all.cmd` on the Wall-Z development machine. It executes v0.1..v0.6 native tests and builds RA4M1, onboard ESP32-S3, fisheye ESP32-CAM and PS4 ESP32-CAM targets.

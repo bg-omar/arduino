@@ -1,5 +1,5 @@
 /*
- * Wall-Z Brain v0.5.0 — onboard ESP32-S3
+ * Wall-Z Brain v0.6.0 — onboard ESP32-S3
  *
  * Responsibilities:
  *   - keep UNO R4 USB CDC/CMSIS-DAP bridge active via ESP_UNO_R4
@@ -10,9 +10,10 @@
  *   - optional, explicitly armed low-authority autonomous suggestions
  *
  * Safety/authority model:
- *   PS4/manual + RA safety > existing RA robot modes > Brain.
- *   The RA4M1 enforces manual override, heartbeat timeout, sonar clearance,
- *   short movement deadlines and motor stop independently of this firmware.
+ *   active PS4 input > RA safety > selected RA robot mode / Brain.
+ *   PS4 may stay connected permanently: only non-neutral input temporarily
+ *   pauses Brain actuation. OPTIONS explicitly stops autonomy and opens the
+ *   RA runtime autonomy menu. The RA4M1 remains final safety authority.
  */
 
 #include <Arduino.h>
@@ -57,6 +58,7 @@ bool autonomyEnabled = false;
 bool visionFsReady = false;
 bool imitationPolicyEnabled = false;
 bool imitationDirty = false;
+bool manualOverrideWasActive = false;
 ImitationPrediction lastImitationPrediction{};
 BrainAction lastSuggested = BrainAction::Idle;
 BrainContext lastContext = BrainContext::Calm;
@@ -74,7 +76,7 @@ const char kIndexHtml[] PROGMEM = R"HTML(<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Wall-Z Brain v0.5</title>
+<title>Wall-Z Brain v0.6</title>
 <style>
 :root{color-scheme:dark} body{font-family:system-ui,sans-serif;margin:1rem;background:#101114;color:#eee;max-width:1000px}
 h1{font-size:1.35rem;margin-bottom:.3rem} h2{font-size:1rem;margin-top:1.4rem}
@@ -86,7 +88,7 @@ small{opacity:.65}.armed{color:#8f8}.off{color:#aaa}.warn{color:#f99}
 </style>
 </head>
 <body>
-<h1>Wall-Z Brain v0.5.0</h1><small>RA4M1 owns motors/safety. Fisheye stores raw visual experience locally; ESP32-S3 adds semantic context, learning and policy.</small>
+<h1>Wall-Z Brain v0.6.0</h1><small>RA4M1 owns motors/safety. Fisheye stores raw visual experience locally; ESP32-S3 adds semantic context, learning and policy.</small>
 <div class="grid">
 <section class="card"><h2>Robot</h2><dl>
 <dt>RA link</dt><dd id="ra">-</dd><dt>distance</dt><dd id="dist">-</dd><dt>light L/R</dt><dd id="light">-</dd><dt>mic L/R</dt><dd id="mic">-</dd><dt>gyro mrad/s</dt><dd id="gyro">-</dd><dt>head</dt><dd id="head">-</dd><dt>manual</dt><dd id="manual">-</dd><dt>robot mode</dt><dd id="robotmode">-</dd><dt>brain armed</dt><dd id="armed">-</dd></dl>
@@ -97,7 +99,7 @@ small{opacity:.65}.armed{color:#8f8}.off{color:#aaa}.warn{color:#f99}
 <p><input id="teachlabel" maxlength="15" placeholder="person / ball / door"><button class="good" onclick="teach()">Teach + store current view</button><button class="danger" onclick="post('/api/vision/concepts/reset')">Forget all</button></p><p><a href="/api/vision/dataset"><button>Download S3 TinyML grid data</button></a><button onclick="post('/api/vision/dataset/reset')">Clear dataset</button></p><small>Raw 160×120 grayscale PGM frames are stored locally on the fisheye microSD. The S3 retains compact grids/labels for learning and sends context back to the camera.</small></section>
 <section class="card"><h2>Imitation learning</h2><dl>
 <dt>PS4 demo</dt><dd id="idemostate">-</dd><dt>learned samples</dt><dd id="isamples">0</dd><dt>prediction</dt><dd id="ipred">idle</dd><dt>confidence</dt><dd id="iconf">0</dd><dt>nearest</dt><dd id="inear">-</dd><dt>policy</dt><dd id="ipolicy">shadow</dd></dl>
-<button class="good" onclick="post('/api/imitation/policy?on=1')">Use imitation</button><button onclick="post('/api/imitation/policy?on=0')">Shadow only</button><button class="danger" onclick="post('/api/imitation/reset')">Forget driving</button><p><a href="/api/imitation/dataset"><button>Download PS4 dataset</button></a><button onclick="post('/api/imitation/dataset/reset')">Clear dataset</button></p><small>Drive Wall-Z normally with PS4. The S3 observes your action + sensor/vision state. Execution still requires Brain ARM and RA4M1 safety approval.</small></section>
+<button class="good" onclick="post('/api/imitation/policy?on=1')">Use imitation</button><button onclick="post('/api/imitation/policy?on=0')">Shadow only</button><button class="danger" onclick="post('/api/imitation/reset')">Forget driving</button><p><a href="/api/imitation/dataset"><button>Download PS4 dataset</button></a><button onclick="post('/api/imitation/dataset/reset')">Clear dataset</button></p><small>Drive Wall-Z normally with PS4. Active PS4 input temporarily overrides an armed Brain; neutral input returns authority to Brain automatically. OPTIONS stops autonomy and opens the RA mode menu.</small></section>
 <section class="card"><h2>Cognitive state</h2><dl>
 <dt>context</dt><dd id="context">-</dd><dt>suggestion</dt><dd id="action">-</dd><dt>observations</dt><dd id="obs">-</dd><dt>rewards</dt><dd id="rewards">-</dd></dl>
 <div>novelty <span id="noveltyv"></span><div class="bar"><i id="novelty"></i></div></div>
@@ -446,11 +448,11 @@ void handleArm() {
     if (on) {
         if (!ra_link::online(millis())) { server.send(409,"application/json","{\"error\":\"ra-offline\"}"); return; }
         const BrainTelemetry& t=ra_link::telemetry();
-        if (t.manual || t.robot_mode) { server.send(409,"application/json","{\"error\":\"manual-or-robot-mode\"}"); return; }
+        if (t.robot_mode) { server.send(409,"application/json","{\"error\":\"robot-mode-active\"}"); return; }
     }
     autonomyEnabled=on;
     ra_link::arm(on);
-    logLine(on?"Brain autonomy ARM requested":"Brain autonomy disarmed");
+    logLine(on?"Brain autonomy ARM requested (shared PS4 control)":"Brain autonomy disarmed");
     server.send(200,"application/json",on?"{\"autonomy\":true}":"{\"autonomy\":false}");
 }
 
@@ -500,6 +502,42 @@ void learnFromManualDemonstration(uint32_t now) {
     }
 }
 
+void processRaUserModeRequest() {
+    const RaUserModeRequest req = ra_link::takeUserModeRequest();
+    switch (req) {
+        case RaUserModeRequest::Brain:
+            autonomyEnabled = true;
+            imitationPolicyEnabled = false;
+            ra_link::arm(true);
+            logLine("PS4 menu: Brain Auto");
+            break;
+        case RaUserModeRequest::Imitation:
+            autonomyEnabled = true;
+            imitationPolicyEnabled = true;
+            ra_link::arm(true);
+            logLine("PS4 menu: Brain Imitation");
+            break;
+        case RaUserModeRequest::SenseReact:
+            autonomyEnabled = false;
+            ra_link::arm(false);
+            logLine("PS4 menu: Sense React (RA owns autonomy)");
+            break;
+        case RaUserModeRequest::FreeRoam:
+            autonomyEnabled = false;
+            ra_link::arm(false);
+            logLine("PS4 menu: Free Roam (RA owns autonomy)");
+            break;
+        case RaUserModeRequest::Stop:
+            autonomyEnabled = false;
+            ra_link::arm(false);
+            logLine("PS4 menu: autonomy stopped/manual");
+            break;
+        case RaUserModeRequest::None:
+        default:
+            break;
+    }
+}
+
 bool executeImitationAction(ImitationAction action, const BrainTelemetry& t) {
     switch (action) {
         case ImitationAction::Forward: ra_link::move('F', 180); return true;
@@ -518,11 +556,26 @@ bool executeImitationAction(ImitationAction action, const BrainTelemetry& t) {
 void executeBrainAction(uint32_t now) {
     if (!autonomyEnabled || !ra_link::online(now) || !ra_link::hasTelemetry()) return;
     const BrainTelemetry t=fusedTelemetry(now);
-    if (t.manual || t.robot_mode) {
+    if (t.robot_mode) {
         autonomyEnabled=false;
         ra_link::arm(false);
-        logLine("Brain auto-disarm: manual/robot mode");
+        manualOverrideWasActive=false;
+        logLine("Brain auto-disarm: RA robot mode");
         return;
+    }
+    if (t.manual) {
+        // Shared control: learn from the demonstration, but do not actuate.
+        // RA4M1 simultaneously cancels any outstanding Brain pulse without
+        // overwriting the PS4 command. Brain stays armed.
+        manualOverrideWasActive=true;
+        return;
+    }
+    if (manualOverrideWasActive) {
+        manualOverrideWasActive=false;
+        // Resume on the first neutral telemetry frame rather than waiting for
+        // the normal action cadence.
+        lastBrainActionMs = now - kBrainActionPeriodMs;
+        logLine("Brain resumed after PS4 override");
     }
     if (!t.brain_armed) return; // wait for RA acknowledgement / state update
     if (static_cast<uint32_t>(now-lastBrainActionMs)<kBrainActionPeriodMs) return;
@@ -568,7 +621,7 @@ void handleNotFound(){server.send(404,"text/plain","not found");}
 void setup() {
     esp_uno_r4_setup();
     delay(50);
-    logLine("Wall-Z Brain v0.5.0 ESP32-S3 boot");
+    logLine("Wall-Z Brain v0.6.0 ESP32-S3 boot");
     visionFsReady = SPIFFS.begin(true);
     logLine(visionFsReady ? "Vision dataset FS ready" : "Vision dataset FS unavailable");
     ra_link::begin();
@@ -618,6 +671,7 @@ void loop() {
     server.handleClient();
     const uint32_t now=millis();
     ra_link::poll(now);
+    processRaUserModeRequest();
     ra_link::heartbeat(now);
     vision_link::poll(now);
     if (!vision_link::online(now) && static_cast<uint32_t>(now-lastVisionPingMs)>=kVisionPingPeriodMs) {

@@ -50,6 +50,8 @@
 #include "sense_react.h"
 #include "laser_beam.h"
 #include "radar_scan.h"
+#include "autonomy_menu.h"
+#include "brain_link.h"
 
 static uint32_t lastButtonMs = 0;
 static uint32_t lastDriveMs = 0;
@@ -276,6 +278,7 @@ void PS4::pollSerial() {
 				const uint32_t now = millis();
 				const bool petHappy = (displayAdafruit::petStatus == 0);
 				const bool inMenu = menu::isOpen();
+				const bool inAutonomyMenu = autonomy_menu::isOpen();
                 switch (values[0]) {
                     case SQUARE:
 						if (!elapsed(now, lastButtonMs, 250)) break;
@@ -293,13 +296,18 @@ void PS4::pollSerial() {
                         break;
                     case xCROSS:
 						if (!elapsed(now, lastButtonMs, 250)) break;
-						if (inMenu) {
+						if (inAutonomyMenu) {
+							autonomy_menu::select();
+						} else if (inMenu) {
 							menu::select();
 						}
 						showDotEmotion(pestoEmotionFromButton(xCROSS, petHappy));
 						break;
                     case CIRCLE:
-						if (inMenu) {
+						if (inAutonomyMenu) {
+							if (!elapsed(now, lastButtonMs, 250)) break;
+							autonomy_menu::close();
+						} else if (inMenu) {
 							if (!elapsed(now, lastButtonMs, 250)) break;
 							menu::undo();
 							showDotEmotion(pestoEmotionFromButton(CIRCLE, petHappy));
@@ -314,9 +322,8 @@ void PS4::pollSerial() {
 					case DPAD_U:
 						if (!elapsed(now, lastButtonMs, 250)) break;
 						showDotEmotion(pestoEmotionFromButton(DPAD_U, petHappy));
-						if (inMenu) {
-							menu::up();
-						}
+						if (inAutonomyMenu) autonomy_menu::up();
+						else if (inMenu) menu::up();
 						break;
                     case DPAD_R:
 						showDotEmotion(pestoEmotionFromButton(DPAD_R, petHappy));
@@ -327,9 +334,8 @@ void PS4::pollSerial() {
 					case DPAD_D:
 						if (!elapsed(now, lastButtonMs, 250)) break;
 						showDotEmotion(pestoEmotionFromButton(DPAD_D, petHappy));
-						if (inMenu) {
-							menu::down();
-						}
+						if (inAutonomyMenu) autonomy_menu::down();
+						else if (inMenu) menu::down();
 					break;
                     case DPAD_L:
 						showDotEmotion(pestoEmotionFromButton(DPAD_L, petHappy));
@@ -350,14 +356,14 @@ void PS4::pollSerial() {
 						break;
                     case OPTION:
 						if (!elapsed(now, lastButtonMs, 250)) break;
-						if (sense_react::isActive()) {
-							sense_react::stop();
-							showDotEmotion(PestoEmotion::Wink);
-						} else {
-							robot_modes::stopAll();
-							sense_react::start();
-							showDotEmotion(PestoEmotion::Curious);
-						}
+						// v0.6: OPTIONS is the explicit autonomy-stop/menu button.
+						// Controller connection itself never disables Brain.
+						robot_modes::stopAll();
+						brain_link::userStop();
+						if (inMenu) menu::closeDiscard();
+						if (inAutonomyMenu) autonomy_menu::close();
+						else autonomy_menu::open();
+						showDotEmotion(PestoEmotion::Curious);
 						break;
                     case PSHOME: if (main::use_barometer) barometer::baroMeter();break;
                     case L1:
@@ -380,6 +386,7 @@ void PS4::pollSerial() {
                         break;
                     case TOUCHPD:
 						if (!elapsed(now, lastButtonMs, 250)) break;
+						if (autonomy_menu::isOpen()) autonomy_menu::close();
 						if (FEATURE_ENABLED(main::use_menu, USE_MENU)) {
 							menu::toggle();
 						}

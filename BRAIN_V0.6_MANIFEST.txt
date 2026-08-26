@@ -1,0 +1,18 @@
+Wall-Z Brain v0.6.0 manifest
+=============================
+
+981d29065d9fdbc33f7eece6021c421d526a7de5bba9d0db4dd76d86fb6df722  src/PS4.cpp
+7565e34e8baca160a16f36e23a7af05b49d2956dd1cb08429d104daad90993a5  src/brain_link.cpp
+a645519d44143f9c9699fac14cc6c88510a3e2190ee9c5cb398512ca178dd592  src/brain_link.h
+ee9e55e3a85d27aa640c2be7e096d3945420dc823e497342f1045b2724ae5af5  src/autonomy_menu.cpp
+fd0cdd525fb53ea73d01fc90bb117095b2b2e86e1971357195ecaed8712378e0  src/autonomy_menu.h
+e2de5f9bf3ad223b7ee09169358a3013ad3c9c39e4f685b5cb315b9d0a95bb5a  src/shared_control.h
+9a57ac1d1c68ca9fb777d6ec5dcb1cad11e692bd45e51e67d5c16135b0ef27c9  src/oled_mode.h
+cce7adf684ec38a18f2919aa64561d672db54d3c7c26b834a92c9a44be494546  src/displayAdafruit.cpp
+b3e228c175fc0dc33894df70618353b8c917e08ee85b19995aebca1928c8a6a7  src_esp32_r4/main_esp.cpp
+6d31a6c29bf599f9fda2c3458cb1621de25b0937a86576370dfdaa4eefb06708  src_esp32_r4/ra_link.cpp
+e9ab1dcbb4464b6eaec01c21dfdc74526f17df512b18e3f08ca4c4c091e3bf83  src_esp32_r4/ra_link.h
+8e0fd32e6a55c5de1c6693cf9635af9111831eca35c99f368a3560307545ecdc  src_esp32_r4/user_mode_protocol.h
+99575c0e71e48b5b48746acb00f5bc8e8e33fef587b1585a26763fdf5b633e23  README_BRAIN_v0.6.0.md
+340ea3d8b00d544dccafef71226a574be3222d249e60b54fac6c86291aa57e5a  CHANGELOG_BRAIN_v0.6.0.md
+48e8788524c0b9af31f45b6ea88d6b6c47b2ea93378264739979f249c4988c3d  VALIDATION_BRAIN_v0.6.0.txt

@@ -314,6 +314,10 @@ void displayAdafruit::displayLoop(){
 		}
 		return;
 	}
+	if (sOledMode == OledMode::AutonomyMenu) {
+		// autonomy_menu draws only on input changes; keep its frame untouched.
+		return;
+	}
 	if (sOledMode == OledMode::SenseReact || sOledMode == OledMode::Avoid) {
 		drawSenseReactPage();
 		return;
@@ -585,5 +589,4 @@ void displayAdafruit::drawEllipse(int x0, int y0, int a, int b, uint8_t color) {
 		}
 	}
 }
-
 

@@ -16,6 +16,7 @@ uint32_t sLastHeartbeatMs = 0;
 char sLine[192] = {};
 uint16_t sLinePos = 0;
 char sLastAck[64] = "none";
+RaUserModeRequest sUserModeRequest = RaUserModeRequest::None;
 
 void sendLine(const char* line) {
     SERIAL_AT.println(line);
@@ -34,6 +35,11 @@ void handleLine(char* line, uint32_t now) {
         sDemo = d;
         sHaveDemo = true;
         sLastDemoLocalMs = now;
+        return;
+    }
+    const RaUserModeRequest userMode = parseRaUserModeRequest(line);
+    if (userMode != RaUserModeRequest::None) {
+        sUserModeRequest = userMode;
         return;
     }
     if (strncmp(line, "A,", 2) == 0 || strncmp(line, "RA,", 3) == 0) {
@@ -88,6 +94,12 @@ const char* lastAck() { return sLastAck; }
 bool hasDemonstration() { return sHaveDemo; }
 const ManualDemonstration& demonstration() { return sDemo; }
 uint32_t demonstrationAge(uint32_t now) { return sHaveDemo ? static_cast<uint32_t>(now - sLastDemoLocalMs) : 0xFFFFFFFFu; }
+
+RaUserModeRequest takeUserModeRequest() {
+    const RaUserModeRequest out = sUserModeRequest;
+    sUserModeRequest = RaUserModeRequest::None;
+    return out;
+}
 
 void arm(bool enable) {
     sendLine(enable ? "B,ARM,1" : "B,ARM,0");
