@@ -84,7 +84,13 @@ public:
                                    t.gyro_y_mrad * t.gyro_y_mrad +
                                    t.gyro_z_mrad * t.gyro_z_mrad));
             const float motion = clamp01(gyroMag / 2500.0f);
-            noveltyNow = clamp01(0.35f*dDist + 0.20f*dLight + 0.25f*dMic + 0.20f*motion);
+            const float visualFamiliarity = (t.vision_online != 0)
+                ? clamp01(static_cast<float>(t.vision_familiarity) / 1000.0f) : 0.0f;
+            const float visionNovelty = (t.vision_online != 0)
+                ? clamp01((static_cast<float>(t.vision_motion) / 1000.0f)
+                          * (1.0f - 0.55f * visualFamiliarity)) : 0.0f;
+            noveltyNow = clamp01(0.28f*dDist + 0.16f*dLight + 0.20f*dMic
+                               + 0.16f*motion + 0.20f*visionNovelty);
         }
 
         metrics_.novelty = 0.78f * metrics_.novelty + 0.22f * noveltyNow;
@@ -93,7 +99,10 @@ public:
         const float soundExcitation = clamp01(std::fabs(micMean - micBaseline_) / (std::fabs(micBaseline_) * 0.30f + 100.0f));
         const float gyroAbs = static_cast<float>(std::abs(t.gyro_x_mrad) + std::abs(t.gyro_y_mrad) + std::abs(t.gyro_z_mrad));
         const float motionExcitation = clamp01(gyroAbs / 3500.0f);
-        metrics_.arousal = clamp01(0.86f * metrics_.arousal + 0.14f * (0.55f*soundExcitation + 0.45f*motionExcitation));
+        const float visionExcitation = (t.vision_online != 0)
+            ? clamp01(static_cast<float>(t.vision_motion) / 250.0f) : 0.0f;
+        metrics_.arousal = clamp01(0.86f * metrics_.arousal
+            + 0.14f * (0.45f*soundExcitation + 0.30f*motionExcitation + 0.25f*visionExcitation));
         metrics_.valence *= 0.995f;
         metrics_.observations++;
         metrics_.confidence = clamp01(0.25f + 0.65f * (1.0f - std::exp(-static_cast<float>(metrics_.observations) / 1200.0f)));
@@ -111,6 +120,10 @@ public:
 
     BrainContext classify(const BrainTelemetry& t) const {
         if (t.distance_mm >= 0 && t.distance_mm < 400) return BrainContext::Obstacle;
+
+        // Dedicated fisheye node can raise a visual attention event without
+        // taking any motor authority away from the RA4M1 safety layer.
+        if (t.vision_online != 0 && t.vision_motion >= 45) return BrainContext::MotionEvent;
 
         const int lightDiff = t.light_l - t.light_r;
         const int lightScale = (std::abs(t.light_l) + std::abs(t.light_r)) / 2;
@@ -150,7 +163,13 @@ public:
             case BrainContext::LightRight: return BrainAction::LookRight;
             case BrainContext::SoundEvent:
                 return (t.mic_l >= t.mic_r) ? BrainAction::LookLeft : BrainAction::LookRight;
-            case BrainContext::MotionEvent: return BrainAction::Stop;
+            case BrainContext::MotionEvent:
+                if (t.vision_online != 0 && t.vision_motion >= 45) {
+                    if (t.vision_x < -120) return BrainAction::LookLeft;
+                    if (t.vision_x > 120) return BrainAction::LookRight;
+                    return BrainAction::Idle;
+                }
+                return BrainAction::Stop;
             case BrainContext::Calm:
             default:
                 return metrics_.curiosity > 0.62f ? BrainAction::CreepForward : BrainAction::Idle;

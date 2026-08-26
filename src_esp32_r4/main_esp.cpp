@@ -1,5 +1,5 @@
 /*
- * Wall-Z Brain v0.1.0 — onboard ESP32-S3
+ * Wall-Z Brain v0.3.0 — onboard ESP32-S3
  *
  * Responsibilities:
  *   - keep UNO R4 USB CDC/CMSIS-DAP bridge active via ESP_UNO_R4
@@ -17,6 +17,8 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <FS.h>
+#include <SPIFFS.h>
 #include <esp_uno_r4.h>
 #include <cstdio>
 #include <cstring>
@@ -27,19 +29,26 @@
 #include "log_buffer.h"
 #include "ra_link.h"
 #include "real_time.h"
+#include "vision_link.h"
+#include "visual_memory.h"
+#include "visual_store.h"
 #include "secrets.h"
 
 namespace {
 WebServer server(80);
 LogBuffer gatewayLog;
 BrainCore brain;
+VisualMemory visualMemory;
+uint16_t lastObservedGridSeq = 0;
 uint32_t lastWifiRetryMs = 0;
 uint32_t lastNtpPollMs = 0;
 uint32_t lastBrainObserveMs = 0;
 uint32_t lastBrainActionMs = 0;
 uint32_t lastPersistMs = 0;
+uint32_t lastVisionPingMs = 0;
 bool wifiWasConnected = false;
 bool autonomyEnabled = false;
+bool visionFsReady = false;
 BrainAction lastSuggested = BrainAction::Idle;
 BrainContext lastContext = BrainContext::Calm;
 
@@ -48,13 +57,14 @@ constexpr uint32_t kNtpPollMs = 1000;
 constexpr uint32_t kWifiConnectTimeoutMs = 15000;
 constexpr uint32_t kBrainActionPeriodMs = 850;
 constexpr uint32_t kPersistPeriodMs = 300000; // reduce NVS wear
+constexpr uint32_t kVisionPingPeriodMs = 5000;
 
 const char kIndexHtml[] PROGMEM = R"HTML(<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Wall-Z Brain v0.1</title>
+<title>Wall-Z Brain v0.3</title>
 <style>
 :root{color-scheme:dark} body{font-family:system-ui,sans-serif;margin:1rem;background:#101114;color:#eee;max-width:1000px}
 h1{font-size:1.35rem;margin-bottom:.3rem} h2{font-size:1rem;margin-top:1.4rem}
@@ -66,11 +76,15 @@ small{opacity:.65}.armed{color:#8f8}.off{color:#aaa}.warn{color:#f99}
 </style>
 </head>
 <body>
-<h1>Wall-Z Brain v0.1.0</h1><small>RA4M1 owns motors/safety. ESP32-S3 observes, remembers and learns.</small>
+<h1>Wall-Z Brain v0.3.0</h1><small>RA4M1 owns motors/safety. ESP32-S3 observes, learns visual concepts and remembers rewards.</small>
 <div class="grid">
 <section class="card"><h2>Robot</h2><dl>
 <dt>RA link</dt><dd id="ra">-</dd><dt>distance</dt><dd id="dist">-</dd><dt>light L/R</dt><dd id="light">-</dd><dt>mic L/R</dt><dd id="mic">-</dd><dt>gyro mrad/s</dt><dd id="gyro">-</dd><dt>head</dt><dd id="head">-</dd><dt>manual</dt><dd id="manual">-</dd><dt>robot mode</dt><dd id="robotmode">-</dd><dt>brain armed</dt><dd id="armed">-</dd></dl>
 <button class="good" onclick="post('/api/brain/arm?on=1')">ARM brain</button><button onclick="post('/api/brain/arm?on=0')">Disarm</button><button class="danger" onclick="post('/api/robot/stop')">STOP</button></section>
+<section class="card"><h2>Fisheye vision + memory</h2><dl>
+<dt>link</dt><dd id="visionlink">-</dd><dt>motion</dt><dd id="vmotion">-</dd><dt>attention x/y</dt><dd id="vxy">-</dd><dt>brightness</dt><dd id="vbright">-</dd><dt>contrast</dt><dd id="vcontrast">-</dd><dt>fps</dt><dd id="vfps">-</dd><dt>grid</dt><dd id="vgrid">-</dd><dt>concept</dt><dd id="vconcept">unknown</dd><dt>familiarity</dt><dd id="vfamiliarity">0</dd><dt>concept value</dt><dd id="vvalue">0</dd><dt>concepts</dt><dd id="vconcepts">0</dd></dl>
+<button onclick="post('/api/vision/ping')">Ping camera</button><button onclick="post('/api/vision/snapshot')">Snapshot</button><button onclick="post('/api/vision/threshold?v=18')">Default threshold</button>
+<p><input id="teachlabel" maxlength="15" placeholder="person / ball / door"><button class="good" onclick="teach()">Teach current view</button><button class="danger" onclick="post('/api/vision/concepts/reset')">Forget all</button></p><p><a href="/api/vision/dataset"><button>Download TinyML data</button></a><button onclick="post('/api/vision/dataset/reset')">Clear dataset</button></p><small>Teach 3–8 examples from slightly different poses for a more stable concept. Each teach also records a labelled grid for later TensorFlow training.</small></section>
 <section class="card"><h2>Cognitive state</h2><dl>
 <dt>context</dt><dd id="context">-</dd><dt>suggestion</dt><dd id="action">-</dd><dt>observations</dt><dd id="obs">-</dd><dt>rewards</dt><dd id="rewards">-</dd></dl>
 <div>novelty <span id="noveltyv"></span><div class="bar"><i id="novelty"></i></div></div>
@@ -84,11 +98,13 @@ small{opacity:.65}.armed{color:#8f8}.off{color:#aaa}.warn{color:#f99}
 <h2>ESP log</h2><pre id="log"></pre>
 <script>
 async function post(u){try{await fetch(u,{method:'POST'});setTimeout(tick,80)}catch(e){}}
+async function teach(){const v=document.getElementById('teachlabel').value.trim();if(!v)return;await post('/api/vision/teach?label='+encodeURIComponent(v));}
 function bar(id,v){v=Math.max(0,Math.min(1,v));document.getElementById(id).style.width=(100*v).toFixed(0)+'%';document.getElementById(id+'v').textContent=v.toFixed(3)}
 async function tick(){try{
- const [s,r,b,l]=await Promise.all([fetch('/api/status').then(x=>x.json()),fetch('/api/robot').then(x=>x.json()),fetch('/api/brain').then(x=>x.json()),fetch('/api/log').then(x=>x.json())]);
+ const [s,r,v,b,l]=await Promise.all([fetch('/api/status').then(x=>x.json()),fetch('/api/robot').then(x=>x.json()),fetch('/api/vision').then(x=>x.json()),fetch('/api/brain').then(x=>x.json()),fetch('/api/log').then(x=>x.json())]);
  wifi.textContent=s.wifi;ip.textContent=s.ip;ssid.textContent=s.ssid;rssi.textContent=s.rssi+' dBm';heap.textContent=s.heap;ntp.textContent=s.ntp;
  ra.textContent=r.online?'online ('+r.age_ms+' ms)':'offline';dist.textContent=r.distance_mm<0?'n/a':r.distance_mm+' mm';light.textContent=r.light_l+' / '+r.light_r;mic.textContent=r.mic_l+' / '+r.mic_r;gyro.textContent=r.gx+' / '+r.gy+' / '+r.gz;head.textContent=r.head_xy+' / '+r.head_z;manual.textContent=r.manual?'ACTIVE':'no';robotmode.textContent=r.robot_mode?'ACTIVE':'no';armed.textContent=r.brain_armed?'YES':'no';armed.className=r.brain_armed?'armed':'off';ack.textContent=r.ack;
+ visionlink.textContent=v.online?'online ('+v.age_ms+' ms)':'offline';vmotion.textContent=v.motion+'/1000';vxy.textContent=v.x+' / '+v.y;vbright.textContent=v.brightness;vcontrast.textContent=v.contrast;vfps.textContent=(v.fps_x10/10).toFixed(1);vgrid.textContent=v.grid_online?'online ('+v.grid_age_ms+' ms)':'offline';vconcept.textContent=v.concept;vfamiliarity.textContent=v.familiarity+'/1000';vvalue.textContent=v.concept_value;vconcepts.textContent=v.concepts;
  context.textContent=b.context;action.textContent=b.suggestion+(b.autonomy?' [AUTO]':' [shadow]');obs.textContent=b.observations;rewards.textContent=b.rewards;bar('novelty',b.novelty);bar('curiosity',b.curiosity);bar('arousal',b.arousal);bar('confidence',b.confidence);valence.textContent=b.valence.toFixed(3);document.getElementById('log').textContent=(l.lines||[]).join('\n');
 }catch(e){}}
 tick();setInterval(tick,500);
@@ -153,6 +169,23 @@ void fillStatus(EspStatus& status, char* ipBuf, size_t ipCap, char* ssidBuf, siz
     status.uptime_ms = millis(); status.heap = ESP.getFreeHeap();
 }
 
+BrainTelemetry fusedTelemetry(uint32_t now) {
+    BrainTelemetry t = ra_link::telemetry();
+    if (vision_link::online(now)) {
+        const VisionTelemetry& v = vision_link::telemetry();
+        t.vision_online = 1;
+        t.vision_motion = v.motion;
+        t.vision_x = v.x;
+        t.vision_y = v.y;
+        t.vision_brightness = v.brightness;
+        t.vision_contrast = v.contrast;
+        const VisualRecognition& vr = visualMemory.current();
+        t.vision_familiarity = vr.index >= 0 ? vr.score : 0;
+        t.vision_value = vr.index >= 0 ? vr.value_milli : 0;
+    }
+    return t;
+}
+
 void handleRoot() { server.send_P(200, "text/html", kIndexHtml); }
 
 void handleStatus() {
@@ -185,8 +218,105 @@ void handleRobot() {
     server.send(200,"application/json",json);
 }
 
+void handleVision() {
+    const uint32_t now = millis();
+    const bool online = vision_link::online(now);
+    const VisionTelemetry& v = vision_link::telemetry();
+    const VisualRecognition& r = visualMemory.current();
+    char json[640];
+    snprintf(json, sizeof(json),
+        "{\"online\":%s,\"age_ms\":%lu,\"motion\":%d,\"x\":%d,\"y\":%d,\"brightness\":%d,\"contrast\":%d,\"fps_x10\":%d,\"flags\":%lu,\"grid_online\":%s,\"grid_age_ms\":%lu,\"concept\":\"%s\",\"familiarity\":%d,\"concept_value\":%d,\"concepts\":%d,\"message\":\"%s\"}",
+        online ? "true" : "false", static_cast<unsigned long>(vision_link::telemetryAge(now)),
+        v.motion, v.x, v.y, v.brightness, v.contrast, v.fps_x10, static_cast<unsigned long>(v.flags),
+        vision_link::gridOnline(now) ? "true" : "false", static_cast<unsigned long>(vision_link::gridAge(now)),
+        r.label, r.index >= 0 ? r.score : 0, r.index >= 0 ? r.value_milli : 0,
+        visualMemory.conceptCount(), vision_link::lastMessage());
+    server.send(200, "application/json", json);
+}
+
+void handleVisionPing() { vision_link::ping(); server.send(200,"application/json","{\"ping\":true}"); }
+void handleVisionThreshold() {
+    const int value = server.hasArg("v") ? server.arg("v").toInt() : 18;
+    vision_link::setThreshold(value);
+    server.send(200,"application/json","{\"threshold\":true}");
+}
+
+void handleVisionSnapshot() {
+    vision_link::requestSnapshot();
+    server.send(200,"application/json","{\"snapshot\":true}");
+}
+
+bool appendVisionTrainingSample(const char* label) {
+    if (!visionFsReady || !label || !vision_link::hasGrid()) return false;
+    File f = SPIFFS.open("/vision_dataset.csv", FILE_APPEND);
+    if (!f) return false;
+    f.print(label); f.print(',');
+    static const char hex[] = "0123456789ABCDEF";
+    const auto& g = vision_link::grid();
+    char pair[2];
+    for (int i=0; i<WALLZ_SNAPSHOT_GRID_CELLS; ++i) {
+        const uint8_t v = g.grid[i]; pair[0]=hex[v>>4]; pair[1]=hex[v&15]; f.write(reinterpret_cast<const uint8_t*>(pair),2);
+    }
+    f.println(); f.close(); return true;
+}
+
+void handleVisionTeach() {
+    if (!server.hasArg("label")) { server.send(400,"application/json","{\"error\":\"label-required\"}"); return; }
+    if (!vision_link::gridOnline(millis()) || !visualMemory.haveGrid()) {
+        vision_link::requestSnapshot();
+        server.send(409,"application/json","{\"error\":\"no-fresh-grid\"}");
+        return;
+    }
+    const String label = server.arg("label");
+    if (!visualMemory.teach(label.c_str())) {
+        server.send(400,"application/json","{\"error\":\"invalid-label-or-full\"}");
+        return;
+    }
+    visual_store::save(visualMemory);
+    if (!appendVisionTrainingSample(label.c_str())) logLine("Visual concept taught; dataset write unavailable");
+    else logLine("Visual concept taught + training sample");
+    server.send(200,"application/json","{\"teach\":true}");
+}
+
+void handleVisionResetConcepts() {
+    visualMemory.reset();
+    visual_store::clear();
+    logLine("Visual concepts cleared");
+    server.send(200,"application/json","{\"reset\":true}");
+}
+
+void handleVisionConcepts() {
+    String out = "{\"concepts\":[";
+    bool first = true;
+    for (int i=0; i<WALLZ_VISUAL_MAX_CONCEPTS; ++i) {
+        const auto& c = visualMemory.conceptAt(i);
+        if (!c.samples || !c.label[0]) continue;
+        if (!first) out += ',';
+        first = false;
+        out += "{\"label\":\""; out += c.label;
+        out += "\",\"samples\":"; out += String(c.samples);
+        out += ",\"value\":"; out += String(c.value_milli); out += '}';
+    }
+    out += "]}";
+    server.send(200,"application/json",out);
+}
+
+void handleVisionDataset() {
+    if (!visionFsReady || !SPIFFS.exists("/vision_dataset.csv")) { server.send(404,"text/plain","no dataset"); return; }
+    File f = SPIFFS.open("/vision_dataset.csv", FILE_READ);
+    if (!f) { server.send(500,"text/plain","dataset open failed"); return; }
+    server.sendHeader("Content-Disposition","attachment; filename=wallz_vision_dataset.csv");
+    server.streamFile(f,"text/csv");
+    f.close();
+}
+void handleVisionDatasetReset() {
+    if (visionFsReady) SPIFFS.remove("/vision_dataset.csv");
+    logLine("Visual TinyML dataset cleared");
+    server.send(200,"application/json","{\"reset\":true}");
+}
+
 void handleBrain() {
-    BrainTelemetry t = ra_link::telemetry();
+    BrainTelemetry t = fusedTelemetry(millis());
     const BrainMetrics& m = brain.metrics();
     const BrainContext ctx = brain.classify(t);
     const BrainAction suggestion = brain.suggest(t);
@@ -222,9 +352,11 @@ void handleStop() {
 void handleReward() {
     float v=server.hasArg("v")?server.arg("v").toFloat():0.0f;
     if (v>1.0f) v=1.0f; if (v<-1.0f) v=-1.0f;
-    const BrainContext next=brain.classify(ra_link::telemetry());
+    const BrainContext next=brain.classify(fusedTelemetry(millis()));
     brain.reward(v,next);
+    visualMemory.rewardCurrent(v);
     brain_store::save(brain);
+    visual_store::save(visualMemory);
     char line[64]; snprintf(line,sizeof(line),"Brain reward %.2f",v); logLine(line);
     server.send(200,"application/json","{\"reward\":true}");
 }
@@ -238,7 +370,7 @@ void handleResetBrain() {
 
 void executeBrainAction(uint32_t now) {
     if (!autonomyEnabled || !ra_link::online(now) || !ra_link::hasTelemetry()) return;
-    const BrainTelemetry& t=ra_link::telemetry();
+    const BrainTelemetry t=fusedTelemetry(now);
     if (t.manual || t.robot_mode) {
         autonomyEnabled=false;
         ra_link::arm(false);
@@ -272,10 +404,16 @@ void handleNotFound(){server.send(404,"text/plain","not found");}
 void setup() {
     esp_uno_r4_setup();
     delay(50);
-    logLine("Wall-Z Brain v0.1.0 ESP32-S3 boot");
+    logLine("Wall-Z Brain v0.3.0 ESP32-S3 boot");
+    visionFsReady = SPIFFS.begin(true);
+    logLine(visionFsReady ? "Vision dataset FS ready" : "Vision dataset FS unavailable");
     ra_link::begin();
+    vision_link::begin();
+    logLine("Fisheye UART2 GPIO41/42 @230400");
     if (brain_store::load(brain)) logLine("Brain memory restored");
     else logLine("Brain memory new");
+    if (visual_store::load(visualMemory)) logLine("Visual concept memory restored");
+    else logLine("Visual concept memory new");
 
     connectWifi(kWifiConnectTimeoutMs);
 
@@ -283,6 +421,15 @@ void setup() {
     server.on("/api/status",HTTP_GET,handleStatus);
     server.on("/api/log",HTTP_GET,handleLog);
     server.on("/api/robot",HTTP_GET,handleRobot);
+    server.on("/api/vision",HTTP_GET,handleVision);
+    server.on("/api/vision/ping",HTTP_POST,handleVisionPing);
+    server.on("/api/vision/threshold",HTTP_POST,handleVisionThreshold);
+    server.on("/api/vision/snapshot",HTTP_POST,handleVisionSnapshot);
+    server.on("/api/vision/teach",HTTP_POST,handleVisionTeach);
+    server.on("/api/vision/concepts",HTTP_GET,handleVisionConcepts);
+    server.on("/api/vision/concepts/reset",HTTP_POST,handleVisionResetConcepts);
+    server.on("/api/vision/dataset",HTTP_GET,handleVisionDataset);
+    server.on("/api/vision/dataset/reset",HTTP_POST,handleVisionDatasetReset);
     server.on("/api/brain",HTTP_GET,handleBrain);
     server.on("/api/brain/arm",HTTP_POST,handleArm);
     server.on("/api/brain/reward",HTTP_POST,handleReward);
@@ -299,16 +446,27 @@ void loop() {
     const uint32_t now=millis();
     ra_link::poll(now);
     ra_link::heartbeat(now);
+    vision_link::poll(now);
+    if (!vision_link::online(now) && static_cast<uint32_t>(now-lastVisionPingMs)>=kVisionPingPeriodMs) {
+        lastVisionPingMs=now;
+        vision_link::ping();
+    }
+
+    if (vision_link::hasGrid() && vision_link::grid().seq != lastObservedGridSeq) {
+        lastObservedGridSeq = vision_link::grid().seq;
+        visualMemory.observe(vision_link::grid());
+    }
 
     if (ra_link::hasTelemetry() && static_cast<uint32_t>(now-lastBrainObserveMs)>=100) {
         lastBrainObserveMs=now;
-        brain.observe(ra_link::telemetry());
+        brain.observe(fusedTelemetry(now));
     }
     executeBrainAction(now);
 
     if (static_cast<uint32_t>(now-lastPersistMs)>=kPersistPeriodMs) {
         lastPersistMs=now;
         brain_store::save(brain);
+        visual_store::save(visualMemory);
     }
 
     const bool nowUp=wifiConnected();

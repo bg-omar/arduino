@@ -28,3 +28,9 @@ We have an other ESP32-Cam on the front to have a video feed [src_esp32_cam]
 |Menu| for setup of SD and logging|
 |Mic Module| left and right|
 |Light Sensors| Left and right|
+
+## Brain v0.3
+
+Current cognitive/vision extension: `README_BRAIN_v0.3.0.md`.
+
+The dedicated fisheye node is `src_esp32_fisheye` and remains perception-only. It sends fast motion telemetry plus low-rate 20x15 grayscale learning snapshots directly to the onboard ESP32-S3. The S3 can persistently learn up to 8 named visual concepts from the web dashboard.

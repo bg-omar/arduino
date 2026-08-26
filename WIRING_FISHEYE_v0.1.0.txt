@@ -1,0 +1,22 @@
+Wall-Z Fisheye Vision v0.1.0 wiring
+===================================
+
+AI-Thinker ESP32-CAM                 Arduino UNO R4 WiFi ESP header
+--------------------                 ------------------------------
+GPIO14 / UART2 TX   ---------------> pin 2 / ESP32-S3 GPIO41 (RX)
+GPIO13 / UART2 RX   <--------------- pin 1 / ESP32-S3 GPIO42 (TX)
+GND                 ---------------- pin 6 / GND
+
+UART: 230400 baud, 8N1, 3.3 V logic.
+
+Minimum one-way link:
+  GPIO14 TX -> GPIO41 RX + common GND.
+
+Recommended v0.1 full-duplex link:
+  add GPIO13 RX <- GPIO42 TX, allowing Brain to send PING / threshold / rate / debug commands.
+
+Power:
+  Power the AI-Thinker ESP32-CAM through a stable 5 V rail with common ground.
+  Do not apply 5 V to any ESP32-S3 ESP-header signal pin.
+
+GPIO13/GPIO14 cannot be used for SD-card access while this UART wiring is active.

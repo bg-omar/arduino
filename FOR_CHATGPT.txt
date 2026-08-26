@@ -1,0 +1,60 @@
+Wall-Z source package for ChatGPT
+=================================
+
+This tree is the MERGED codebase:
+  - Brain v0.2.0 fisheye vision (perception-only ESP32-CAM node)
+  - plus local v0.1 safety / radar fixes that must NOT be undone
+
+Do not regress these fixes when proposing patches:
+
+1. B,BRAKE
+   - Obstacle / BrainAction::Stop stops motors WITHOUT disarming autonomy.
+   - Web STOP may still use B,STOP + disarm.
+   - S3 path: ra_link::brake() on BrainAction::Stop (not arm(false)).
+
+2. Radar max 500 cm
+   - RADAR_MAX_CM = 500 in src/radar_scan.h (timeout ~29000 us).
+   - Skip / invalid points beyond 500 cm.
+
+3. Sonar forward gate (brainForwardIsSafe)
+   - distance_mm < 0 (no echo within range) = CLEAR, not blocked.
+   - Block only when distance_mm >= 0 and < BRAIN_FORWARD_CLEARANCE_MM (350).
+   - Brain telemetry / forward uses long ping (BRAIN_SONAR_TIMEOUT_US), not the short avoid-loop ping.
+
+4. brain_link::poll / tick
+   - poll(now) early in the RA loop; tick(millis()) once later.
+   - Do not call tick twice per loop.
+
+5. Motor::Car_creepBack()
+   - Reverse creep helper for Brain MOVE,B — keep it.
+
+6. Fisheye is perception-only
+   - No motor authority on the fisheye CAM.
+   - UART telemetry only (no MJPEG frames on the Brain link).
+   - RA SERIAL_AT=Serial2 stays RA <-> onboard S3.
+   - S3 Serial1 = RA; S3 Serial2 = fisheye (GPIO41 RX / GPIO42 TX).
+
+WiFi
+----
+include/secrets.h in this zip is a placeholder (ssid/pass).
+Real credentials are never shipped. Copy from SAMPLEsecrets.h locally if needed.
+
+Build / test hints
+------------------
+  pio test -e native
+  pio run -e src
+  pio run -e esp32_r4
+  pio run -e esp32_fisheye
+
+See also .cursor/plans/brain-v0.2-fisheye-merge.plan.md and brain-v0.1-review.plan.md.
+
+Brain v0.3 additions
+--------------------
+7. Teach-able visual concepts
+   - Fisheye V telemetry remains perception-only.
+   - New G grid snapshots are 20x15 grayscale and go fisheye -> onboard S3 only.
+   - Visual concepts are learned/persisted on the S3; they never add motor authority.
+   - Do not replace this with a fake semantic model trained on synthetic person/object labels.
+8. TinyML
+   - tools/train_wallz_visual_tinyml.py is a real TensorFlow training/export path for collected Wall-Z data.
+   - v0.3 runtime does not claim generic person detection without a real trained model.

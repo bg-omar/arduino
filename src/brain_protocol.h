@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 
-// Wall-Z Brain v0.1 ASCII protocol over the internal RA4M1 <-> ESP32-S3 UART.
+// Wall-Z Brain v0.2 (v0.1-compatible) ASCII protocol over the internal RA4M1 <-> ESP32-S3 UART.
 // RA -> S3 telemetry:
 // T,ms,distance_mm,light_l,light_r,mic_l,mic_r,gx_mrad,gy_mrad,gz_mrad,head_xy,head_z,manual,robot_mode,brain_armed
 //
@@ -43,6 +43,17 @@ struct BrainTelemetry {
     int manual = 0;
     int robot_mode = 0;
     int brain_armed = 0;
+
+    // Fused by the onboard ESP32-S3 from the dedicated fisheye node.
+    // Not part of the RA telemetry line; parseBrainTelemetry() leaves defaults.
+    int vision_online = 0;
+    int vision_motion = 0;
+    int vision_x = 0;
+    int vision_y = 0;
+    int vision_brightness = 0;
+    int vision_contrast = 0;
+    int vision_familiarity = 0; // S3-only visual memory similarity 0..1000
+    int vision_value = 0;       // S3-only concept association -1000..1000
 };
 
 inline bool brainParseInt(const char*& p, long& out) {

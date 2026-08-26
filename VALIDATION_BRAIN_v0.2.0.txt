@@ -1,0 +1,28 @@
+Wall-Z Brain v0.2.0 validation
+Date: 2026-08-26
+
+[PASS] Standalone Brain + vision protocol + vision-grid tests
+Wall-Z Brain v0.2 standalone tests: PASS
+
+[PASS] Address/undefined-behavior sanitizer test
+Wall-Z Brain v0.2 standalone tests: PASS
+
+[PASS] Fisheye Arduino-specific source syntax checked with strict C++17 compile stubs
+fisheye syntax: PASS
+[PASS] ESP32-S3 vision_link source syntax checked with strict C++17 compile stubs
+vision_link syntax: PASS
+
+[PASS] Existing critical controls unchanged from Brain v0.1.0:
+PASS src/PS4.cpp 6270131d6558b3bfef943f4f94bfccfafdb26e4aa3e5aab19e10e5f45d3aca8d
+PASS src/motor.cpp b664102553fa7bbb3f9aa8c766dd5cc544ad97fca7d45029d8683361e24ddcf1
+PASS src/pwm_board.cpp 020a5309c6972e19d1b880b7e2b44d3a002c5d86a2f299bb92996778ca6b6712
+PASS src/robot_modes.cpp b832d0b47dd1ab30a2e4add14adb5773984d37abe6bdd1cdb79ac071a368236b
+PASS src_esp32_ps4/main_ps4.cpp 2e00649ffde1b623a9f9949ae4feca1dbce53ea32f5d2a6427d5a36377959a4d
+PASS src_esp32_cam/main.cpp f81ace00749ea2c4045b9a88aa4bfb967461087ab386cc7d9ed7406f530cbedc
+PASS src_esp32_cam/handlers.cpp 84a3e120cf2e24c2038e363be442dba6c4173cf5c44b39845850a9c930c1595b
+PASS src_esp32_cam/WifiCam.hpp eb30bfe32342582c525b717ff0a4f187989f98ef27e4c1763d60f3e24d057840
+
+[LIMITATION] PlatformIO CLI is not installed in this runtime; full target builds were not executed here.
+Use run_all.cmd on the development machine for RA4M1 + S3 + ESP32-CAM target builds.
+
+[PASS] Real WiFi credential literals from the input project were checked not to occur in this release tree.
