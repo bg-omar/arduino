@@ -57,6 +57,13 @@ void test_radar_distance_valid() {
 	TEST_ASSERT_FALSE(radarDistanceValid(-1.0));
 	TEST_ASSERT_TRUE(radarDistanceValid(0.0));
 	TEST_ASSERT_TRUE(radarDistanceValid(42.5));
+	TEST_ASSERT_TRUE(radarDistanceValid(500.0));
+	TEST_ASSERT_FALSE(radarDistanceValid(500.1));
+}
+
+void test_radar_ping_timeout_is_500cm() {
+	TEST_ASSERT_EQUAL(500, RADAR_MAX_CM);
+	TEST_ASSERT_EQUAL_UINT32(29000u, RADAR_PING_TIMEOUT_US);
 }
 
 void setUp() {}
@@ -70,5 +77,6 @@ int main(int argc, char **argv) {
 	RUN_TEST(test_radar_zigzag_cols);
 	RUN_TEST(test_radar_cell_servo_positions);
 	RUN_TEST(test_radar_distance_valid);
+	RUN_TEST(test_radar_ping_timeout_is_500cm);
 	return UNITY_END();
 }

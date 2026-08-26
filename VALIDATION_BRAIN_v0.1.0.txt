@@ -1,0 +1,38 @@
+Wall-Z Brain v0.1.0 validation
+================================
+
+Completed in build workspace:
+[PASS] brain_protocol.h standalone parser test
+[PASS] BrainCore observation / obstacle context test
+[PASS] BrainCore positive reward increases Q-value
+[PASS] BrainPersist round-trip restore test
+[PASS] g++ -std=c++17 -Wall -Wextra -Werror for Arduino-free Brain core
+
+Compatibility checksum comparison against uploaded Arduino-R4_UNO_Wall-Z(1).zip:
+[UNCHANGED] src/PS4.cpp
+[UNCHANGED] src/motor.cpp
+[UNCHANGED] src/pwm_board.cpp
+[UNCHANGED] src/robot_modes.cpp
+[UNCHANGED] src_esp32_ps4/main_ps4.cpp
+[UNCHANGED] src_esp32_cam/main.cpp
+
+Only these pre-existing project files were modified:
+- src/config.h
+- src/main_ra.cpp
+- src_esp32_r4/main_esp.cpp
+
+Hardware/PlatformIO build status:
+[NOT RUN HERE] Full PlatformIO toolchain is not installed in the artifact environment.
+Use run_brain_v0.1_tests.cmd and run_brain_v0.1_build.cmd on the Wall-Z development machine.
+
+Important hardware validation sequence:
+1. Build native Brain tests.
+2. Build RA4M1 and ESP32-S3 firmware.
+3. Flash RA4M1 first and verify PS4/motors/servos unchanged with Brain disarmed.
+4. Flash ESP32-S3 Brain firmware.
+5. Verify /api/robot telemetry with wheels raised/off ground.
+6. Verify manual PS4 movement immediately sets brain_armed=0.
+7. ARM Brain with wheels raised and verify <=350 ms motor pulses.
+8. Put an obstacle <350 mm ahead and verify forward command is rejected.
+9. Disconnect/reboot S3 while Brain is moving and verify RA heartbeat failsafe stops it.
+10. Only then perform floor tests at creep speed.

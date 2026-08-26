@@ -59,7 +59,7 @@ Zigzag: even rijen L→R, oneven R→L (minder servo-travel).
 
 [avoid_objects::checkDistance()](c:/workspace/projects/Arduino_Projects/Arduino-R4_UNO_Wall-Z/src/avoid_objects.cpp) gebruikt `pulseIn(..., 3000)` ≈ **50 cm max** — te kort voor een kamer.
 
-Scan gebruikt een aparte ping: timeout **20000 µs** ≈ **3,4 m** (HC-SR04-plafond). Alleen in radar-tick, niet in de 60 ms obstacle-loop, zodat Avoid/Sense React snel blijven.
+Scan gebruikt een aparte ping: timeout **29000 µs** = **500 cm** (`cm = µs / 58`). Punten boven 500 cm of timeout worden overgeslagen. Alleen in radar-tick, niet in de 60 ms obstacle-loop, zodat Avoid/Sense React snel blijven.
 
 ## Non-blocking state machine
 

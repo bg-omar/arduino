@@ -56,6 +56,7 @@ USB-Shield BT   00:1a:7d:da:71:13
 #include "robot_modes.h"
 #include "laser_beam.h"
 #include "radar_scan.h"
+#include "brain_link.h"
 
 bool main::Found_Display = false;
 bool main::Found_Gyro = false;
@@ -119,7 +120,10 @@ void setup(){
 	Serial1.begin(115200);
 	delay(1);
 	SERIAL_AT.begin(115200);
-	logger::logln("UART 9600/115200");
+	#if USE_BRAIN_LINK
+	brain_link::begin();
+	#endif
+	logger::logln("UART 9600/115200 + Brain link");
 	delay(1);
 
 	Motor::motor_setup();
@@ -306,6 +310,10 @@ void loop(){
 
 	pollPs4();
 
+	#if USE_BRAIN_LINK
+	brain_link::poll(now);
+	#endif
+
 	#if USE_ROBOT
 	auto tickRobotModes = [&]() {
 		if (main::use_sd_card && !main::use_robot) {
@@ -439,6 +447,7 @@ void loop(){
 		#endif
 	}
 
+	#if !USE_BRAIN_LINK
 	if (main::use_sd_card) {
 		if (main::read_esp32) {
 			if (SERIAL_AT.available()) {
@@ -467,6 +476,8 @@ void loop(){
 		#endif
 	}
 
+	#endif
+
 	#if USE_MATRIX_PREVIEW
 	if (main::use_sd_card) {
 		if (main::use_matrix_preview) {
@@ -488,6 +499,9 @@ void loop(){
 	#endif
 
 	pollPs4();
+	#if USE_BRAIN_LINK
+	brain_link::tick(millis());
+	#endif
 }
 
 

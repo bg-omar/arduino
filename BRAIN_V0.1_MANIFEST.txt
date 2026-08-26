@@ -1,0 +1,35 @@
+Wall-Z Brain v0.1.0
+===================
+
+NEW / BRAIN FILES
+src/brain_protocol.h
+src/brain_link.h
+src/brain_link.cpp
+src_esp32_r4/brain_core.h
+src_esp32_r4/brain_store.h
+src_esp32_r4/brain_store.cpp
+src_esp32_r4/ra_link.h
+src_esp32_r4/ra_link.cpp
+test/test_brain_v01/test_main.cpp
+tools/brain_test_standalone.cpp
+README_BRAIN_v0.1.0.md
+CHANGELOG_BRAIN_v0.1.0.md
+run_brain_v0.1_tests.cmd
+run_brain_v0.1_build.cmd
+run_all.cmd
+run_upload_ra.cmd
+run_upload_brain_s3.cmd
+run_upload_ps4_cam.cmd
+
+MODIFIED
+src/main_ra.cpp             scheduler hooks + Brain init/tick
+src/config.h                USE_BRAIN_LINK = 1
+src_esp32_r4/main_esp.cpp   gateway -> Brain v0.1 dashboard/learning
+
+CONTROL IMPLEMENTATION RETAINED
+src/PS4.cpp
+src/motor.cpp
+src/pwm_board.cpp
+src/robot_modes.cpp
+src_esp32_ps4/main_ps4.cpp
+src_esp32_cam/*

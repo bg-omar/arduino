@@ -55,6 +55,13 @@ void Motor::Car_creepForward(){
     analogWrite(R_PWM,MOTOR_CREEP_PWM);
 }
 
+void Motor::Car_creepBack(){
+    digitalWrite(L_ROT,LOW);
+    analogWrite(L_PWM,MOTOR_CREEP_PWM);
+    digitalWrite(R_ROT,HIGH);
+    analogWrite(R_PWM,MOTOR_CREEP_PWM);
+}
+
 void Motor::Car_creepLeft(){
     digitalWrite(L_ROT,LOW);
     analogWrite(L_PWM,MOTOR_CREEP_PWM);

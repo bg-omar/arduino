@@ -36,6 +36,7 @@
 #define USE_MATRIX 1
 #define USE_MATRIX_PREVIEW 0
 #define READ_ESP32 0
+#define USE_BRAIN_LINK 1
 #define USE_LCD 0
 #define USE_OLED_SENSORS 1
 

@@ -20,11 +20,12 @@ constexpr int RADAR_TILT_ROWS =
 constexpr int RADAR_CELL_COUNT = RADAR_PAN_COLS * RADAR_TILT_ROWS;
 
 constexpr uint32_t RADAR_SETTLE_MS = 40;
-constexpr uint32_t RADAR_PING_TIMEOUT_US = 20000;
+constexpr double RADAR_CM_PER_US = 58.0;
+constexpr int RADAR_MAX_CM = 500;
+constexpr uint32_t RADAR_PING_TIMEOUT_US =
+	static_cast<uint32_t>(RADAR_MAX_CM * RADAR_CM_PER_US);
 constexpr uint32_t RADAR_SENSE_IDLE_AFTER_MS = 6000;
 constexpr uint32_t RADAR_SENSE_COOLDOWN_MS = 60000;
-
-constexpr double RADAR_CM_PER_US = 58.0;
 
 struct RadarXYZ {
 	double x;
@@ -45,7 +46,7 @@ inline float radarTiltDegFromServo(int servoZ) {
 }
 
 inline bool radarDistanceValid(double distCm) {
-	return distCm >= 0.0;
+	return distCm >= 0.0 && distCm <= static_cast<double>(RADAR_MAX_CM);
 }
 
 inline RadarXYZ radarDistToXYZ(double distCm, float panDeg, float tiltDeg) {
