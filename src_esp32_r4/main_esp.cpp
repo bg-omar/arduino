@@ -1,45 +1,9 @@
 /*
- * C:\Users\mr\Desktop\KS0428 Mini Tank Robot V2.0\unor4wifi-update-windows>update.bat
-Start flashing firmware
-version of espflash is: v2.0.1
-Chip type:         esp32s3 (revision v0.1)
-Crystal frequency: 40MHz
-Flash size:        8MB
-Features:          WiFi, BLE
-MAC address:       dc:54:75:c3:d9:ec
-
-UNO BLE -->     DC:54:75:C3:D9:EC   -
-PC USB Dongel   00:1F:E2:C8:82:BA
-ESP 1           66:CB:3E:E9:02:8A
-ESP small cam   3C:E9:0E:88:65:16
-PS4 Controller: A4:AE:11:E1:8B:B3 (SONYWA) GooglyEyes
-PS5 Controller: 88:03:4C:B5:00:66
-*/
-
-#include <ArduinoBLE.h>
-
-BLEService carService("180A"); // create service: "Device Information"
-
-// create direction control characteristic and allow remote device to read and write
-BLEByteCharacteristic carControlCharacteristic("2A57", BLERead | BLEWrite); // 2A57 is "Digital Output"
-
-#include <esp_uno_r4.h>
-#include <Arduino.h>
-
-#include "real_time.h"
-
-
-// ===========================
-
-unsigned long lastTimeStamp = 0;
-const uint32_t message_interval = 5000;
-
-const char* emojis[8] = {
-  "🌟🌟🌟", "😎👌🔥", "✅", "🇺🇦🛡️🇺🇦🛡️🇺🇦",
-  "🤓", "¯\\_(ツ)_/¯", "🚀🌘", "🤯"
-};
-
-
+ * UNO R4 WiFi onboard ESP32-S3 gateway:
+ * WiFi STA + status/log web UI. CDC/CMSIS-DAP bridge stays active.
+ * PS4-CAM remains on Serial1 of the Renesas chip — this firmware does not host a pad.
+ */
+ 
 /*
 UNO BLE -->     DC:54:75:C3:D9:EC   -
 PC USB Dongel   00:1F:E2:C8:82:BA
@@ -49,192 +13,228 @@ ESP small cam   3C:E9:0E:88:65:16
 PS4 Controller: A4:AE:11:E1:8B:B3 (SONYWA) GooglyEyes
 PS5 Controller: 88:03:4C:B5:00:66
 */
-/********************************************** Setup booting the arduino **************************************/
-// section Defines
-/***************************************************************************************************************/
 
-/********************************************** Setup booting the arduino **************************************/
-// section Includes
-/***************************************************************************************************************/
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <esp_uno_r4.h>
+#include <cstdio>
+#include <cstring>
 
+#include "esp_status.h"
+#include "log_buffer.h"
+#include "real_time.h"
+#include "secrets.h"
 
+namespace {
+WebServer server(80);
+LogBuffer gatewayLog;
+uint32_t lastWifiRetryMs = 0;
+uint32_t lastNtpPollMs = 0;
+bool wifiWasConnected = false;
 
-/********************************************** Setup booting the arduino **************************************/
-// section Functions
-/***************************************************************************************************************/
+constexpr uint32_t kWifiRetryMs = 10000;
+constexpr uint32_t kNtpPollMs = 1000;
+constexpr uint32_t kWifiConnectTimeoutMs = 15000;
 
+const char kIndexHtml[] PROGMEM = R"HTML(<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wall-Z ESP gateway</title>
+<style>
+body{font-family:sans-serif;margin:1.2rem;background:#111;color:#eee}
+h1{font-size:1.2rem}
+dl{display:grid;grid-template-columns:8rem 1fr;gap:.25rem 1rem}
+dt{opacity:.7}
+pre{background:#222;padding:.75rem;min-height:8rem;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<h1>Wall-Z ESP32-S3 gateway</h1>
+<dl>
+<dt>wifi</dt><dd id="wifi">-</dd>
+<dt>ip</dt><dd id="ip">-</dd>
+<dt>ssid</dt><dd id="ssid">-</dd>
+<dt>rssi</dt><dd id="rssi">-</dd>
+<dt>uptime</dt><dd id="uptime">-</dd>
+<dt>heap</dt><dd id="heap">-</dd>
+<dt>ntp</dt><dd id="ntp">-</dd>
+</dl>
+<h2>log</h2>
+<pre id="log"></pre>
+<script>
+async function tick(){
+  try{
+    const s=await (await fetch('/api/status')).json();
+    wifi.textContent=s.wifi;
+    ip.textContent=s.ip;
+    ssid.textContent=s.ssid;
+    rssi.textContent=s.rssi;
+    uptime.textContent=s.uptime_ms;
+    heap.textContent=s.heap;
+    ntp.textContent=s.ntp;
+    const log=await (await fetch('/api/log')).json();
+    document.getElementById('log').textContent=(log.lines||[]).join('\n');
+  }catch(e){}
+}
+tick();
+setInterval(tick,500);
+</script>
+</body>
+</html>
+)HTML";
 
-int r = 255;
-int g = 0;
-int b = 0;
-
-// Calculates the next value in a rainbow sequence
-void nextRainbowColor() {
-    if (r > 0 && b == 0) { r--;  g++; }
-    if (g > 0 && r == 0) { g--;  b++; }
-    if (b > 0 && g == 0) { r++;  b--; }
+void logLine(const char* text) {
+	gatewayLog.appendln(text);
+	Serial.println(text);
 }
 
-
-void onConnect() {
-    Serial.println("Connected!");
+bool wifiConnected() {
+	return WiFi.status() == WL_CONNECTED;
 }
 
-void onDisConnect() {
-    Serial.println("Disconnected!");
+void printIpToLog() {
+	char line[LogBuffer::kLineLength];
+	snprintf(line, sizeof(line), "IP %s", WiFi.localIP().toString().c_str());
+	logLine(line);
 }
 
-void send(char32_t texting) {
-    Serial.println(texting);
-}
-
-
-/********************************************** Setup booting the arduino **************************************/
-// section BLE
-/***************************************************************************************************************/
-
-
-
-/*
-  Bluetooth controlled car (that's the eventual goal here)
-
-  My code is shared under the MIT license.
-    In a nutshell, use it for anything but you take full responsibility.
-
-Starting with the built-in ArduinoBLE example "Peripheral-ButtonBLE"
-Also see:
-https://docs.arduino.cc/tutorials/nano-33-ble/bluetooth
-
-  This example creates a Bluetooth® Low Energy peripheral with service that contains a
-  characteristic to control an LED
-
-  You can use a generic Bluetooth® Low Energy central app, like LightBlue (iOS and Android) or
-  nRF Connect (Android), to interact with the services and characteristics
-  created in this sketch.
-
-  See: https://www.arduino.cc/reference/en/libraries/arduinoble/
-
-  Random UUID Generator: https://www.uuidgenerator.net/version4
-  example: ea943a1a-2206-4235-970f-ad8127fff9bb
-
-  Characteristics can have a random/custom UUID, or they can use a pre-defined value from the BlueTooth Assigned Numbers list:
-  https://btprodspecificationrefs.blob.core.windows.net/assigned-numbers/Assigned%20Number%20Types/Assigned_Numbers.pdf
-
-Examples:
-// Bluetooth® Low Energy Battery Level Characteristic
-BLEUnsignedCharCharacteristic batteryLevelChar("2A19",  // standard 16-bit characteristic UUID (see assigned numbers document)
-    BLERead | BLENotify); // remote clients will be able to get notifications if this characteristic changes
-
-According to the BLE Assigned Numbers document:
-  joystick is 0x03C3
-  boolean is 0x2AE2
-
-*/
-
-
-void BLEsetup() {
-	Serial.begin(9600);
-	while (!Serial);
-
-	pinMode(LED_BUILTIN, OUTPUT); // use the LED as an output
-
-	// begin initialization
-	if (!BLE.begin()) {
-		Serial.println("starting Bluetooth® Low Energy module failed!");
-		while (1) { // blink the built-in LED fast to indicate an issue
-			digitalWrite(LED_BUILTIN, HIGH);
-			delay(100);
-			digitalWrite(LED_BUILTIN, LOW);
-			delay(100);
-		}
+void connectWifi(uint32_t timeoutMs) {
+	if (wifiConnected()) {
+		return;
 	}
-
-	BLE.setLocalName("UnoR4 BLE Car");
-	BLE.setAdvertisedService(carService);
-
-	// add the characteristics to the service
-	carService.addCharacteristic(carControlCharacteristic);
-
-	// add the service
-	BLE.addService(carService);
-
-	carControlCharacteristic.writeValue(0);
-
-	// start advertising
-	BLE.advertise();
-
-	Serial.println("Bluetooth® device active, waiting for connections...");
-}
-
-void BLEloop() {
-	// listen for BLE peripherals to connect:
-	BLEDevice controller = BLE.central();
-
-	// if a central is connected to peripheral:
-	if (controller) {
-		Serial.print("Connected to controller: ");
-		// print the controller's MAC address:
-		Serial.println(controller.address());
-		digitalWrite(LED_BUILTIN, HIGH);  // turn on the LED to indicate the connection
-
-		// while the controller is still connected to peripheral:
-		while (controller.connected()) {
-
-			if (carControlCharacteristic.written()) {
-
-				switch (carControlCharacteristic.value()) {
-					case 01:
-						Serial.println("LEFT");
-						break;
-					case 02:
-						Serial.println("RIGHT");
-						break;
-					case 03:
-						Serial.println("UP");
-						break;
-					case 04:
-						Serial.println("DOWN");
-						break;
-					default:  // 0 or invalid control
-						Serial.println("STOP");
-						break;
-				}
-			}
-		}
-
-		// when the central disconnects, print it out:
-		Serial.print(F("Disconnected from controller: "));
-		Serial.println(controller.address());
-		digitalWrite(LED_BUILTIN, LOW);         // when the central disconnects, turn off the LED
-
+	logLine("WiFi connecting");
+	WiFi.mode(WIFI_STA);
+	WiFi.begin(SECRET_SSID, SECRET_PASS);
+	const uint32_t start = millis();
+	while (!wifiConnected() && (millis() - start) < timeoutMs) {
+		delay(250);
+		Serial.print('.');
+	}
+	Serial.println();
+	if (wifiConnected()) {
+		logLine("WiFi up");
+		printIpToLog();
+		wifiWasConnected = true;
+		real_time::begin();
+	} else {
+		logLine("WiFi fail");
+		wifiWasConnected = false;
 	}
 }
 
-/********************************************** Setup booting the arduino **************************************/
-// section Setup
-/***************************************************************************************************************/
+void copyBounded(char* dest, size_t cap, const char* src) {
+	if (dest == nullptr || cap == 0) {
+		return;
+	}
+	if (src == nullptr) {
+		dest[0] = '\0';
+		return;
+	}
+	strncpy(dest, src, cap - 1);
+	dest[cap - 1] = '\0';
+}
 
+void fillStatus(EspStatus& status, char* ipBuf, size_t ipCap, char* ssidBuf, size_t ssidCap, char* ntpBuf, size_t ntpCap) {
+	if (wifiConnected()) {
+		copyBounded(ipBuf, ipCap, WiFi.localIP().toString().c_str());
+		copyBounded(ssidBuf, ssidCap, WiFi.SSID().c_str());
+		status.wifi = "connected";
+		status.rssi = WiFi.RSSI();
+	} else {
+		copyBounded(ipBuf, ipCap, "0.0.0.0");
+		copyBounded(ssidBuf, ssidCap, SECRET_SSID);
+		status.wifi = "disconnected";
+		status.rssi = 0;
+	}
+	status.ip = ipBuf;
+	status.ssid = ssidBuf;
+	real_time::format(ntpBuf, ntpCap);
+	status.ntp = ntpBuf;
+	status.uptime_ms = millis();
+	status.heap = ESP.getFreeHeap();
+}
 
-void setup()
-{
-  // Initialize CDC Bridge and CMSIS-DAP
-    esp_uno_r4_setup();
-    // Initialize the Serial communication for debugging
-    Serial.begin(9600);
+void handleRoot() {
+	server.send_P(200, "text/html", kIndexHtml);
+}
 
-	BLEsetup();
+void handleStatus() {
+	char ipBuf[20];
+	char ssidBuf[33];
+	char ntpBuf[16];
+	char json[384];
+	EspStatus status;
+	fillStatus(status, ipBuf, sizeof(ipBuf), ssidBuf, sizeof(ssidBuf), ntpBuf, sizeof(ntpBuf));
+	if (!formatEspStatusJson(json, sizeof(json), status)) {
+		server.send(500, "application/json", "{\"error\":\"status\"}");
+		return;
+	}
+	server.send(200, "application/json", json);
+}
+
+void handleLog() {
+	const char* lines[LogBuffer::kLines];
+	const int count = gatewayLog.packedCount();
+	for (int i = 0; i < count; ++i) {
+		lines[i] = gatewayLog.packedLine(i);
+	}
+	char json[512];
+	if (!formatEspLogJson(json, sizeof(json), lines, count)) {
+		server.send(500, "application/json", "{\"error\":\"log\"}");
+		return;
+	}
+	server.send(200, "application/json", json);
+}
+
+void handleNotFound() {
+	server.send(404, "text/plain", "not found");
+}
+}  // namespace
+
+void setup() {
+	esp_uno_r4_setup();
+	Serial.begin(115200);
+	delay(50);
+	logLine("Wall-Z ESP boot");
+
+	connectWifi(kWifiConnectTimeoutMs);
+
+	server.on("/", HTTP_GET, handleRoot);
+	server.on("/api/status", HTTP_GET, handleStatus);
+	server.on("/api/log", HTTP_GET, handleLog);
+	server.onNotFound(handleNotFound);
+	server.begin();
+	logLine("HTTP :80");
+	if (wifiConnected()) {
+		Serial.print("Open http://");
+		Serial.println(WiFi.localIP());
+	}
 }
 
 void loop() {
-	BLEloop();
+	server.handleClient();
 
 	const uint32_t now = millis();
-	static uint32_t last_message = 0;
-	if (now - last_message > message_interval) {
-		last_message += message_interval;
+	const bool nowUp = wifiConnected();
+	if (nowUp && !wifiWasConnected) {
+		logLine("WiFi up");
+		printIpToLog();
+		real_time::begin();
+	}
+	wifiWasConnected = nowUp;
 
-		// Send a message to Renesas chip
-		SERIAL_AT.printf(" --> ESP32-S3 --> Arduino --> Pesto ¯\\_(ツ)_/¯ %s\r\n", emojis[random(8)]);
+	if (!nowUp && (now - lastWifiRetryMs) >= kWifiRetryMs) {
+		lastWifiRetryMs = now;
+		logLine("WiFi retry");
+		WiFi.disconnect();
+		WiFi.mode(WIFI_STA);
+		WiFi.begin(SECRET_SSID, SECRET_PASS);
+	}
+	if ((now - lastNtpPollMs) >= kNtpPollMs) {
+		lastNtpPollMs = now;
+		real_time::poll();
 	}
 }
-

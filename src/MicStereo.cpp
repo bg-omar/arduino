@@ -9,78 +9,86 @@
 #include "main_ra.h"
 #include "pwm_board.h"
 #include "analog.h"
+#include "sense_react.h"
+#include "PS4.h"
+#include "deadline.h"
+#include "mic_peak.h"
 
-int sampleWindow = 50;  // Sample window width in milliseconds
-unsigned int sampleL, sampleR;
-unsigned long startMillis;
-unsigned int peakToPeak, peakToPeakL = 0;
+constexpr uint32_t kMicSampleWindowMs = 50;
 
-int MicStereo::baseRSound, MicStereo::baseLSound = 0;
-short analog::ext_analog_3, analog::ext_analog_1;
+int MicStereo::baseRSound = 0;
+int MicStereo::baseLSound = 0;
+
+static MicPeakState sPeak;
+static uint32_t sWindowStartMs = 0;
+static bool sWindowActive = false;
 
 void MicStereo::MicSetup() {
-    MicStereo::baseRSound = analog::ext_analog_3; /***** A3 ******/
-    MicStereo::baseLSound = analog::ext_analog_1; /***** A1 ******/
-	#if LOG_DEBUG
-		logger::log(" L-Mic: ");
-		if (main::Found_Display) logger::logInt(baseLSound);
-		logger::log(" R-Mic: ");
-		if (main::Found_Display) logger::logIntln(baseRSound);
+	MicStereo::baseRSound = analog::ext_analog_3;
+	MicStereo::baseLSound = analog::ext_analog_1;
+	#if LOG_VERBOSE
+		if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
+			logger::log(" L-Mic: ");
+			logger::logInt(baseLSound);
+			logger::log(" R-Mic: ");
+			logger::logIntln(baseRSound);
+		}
 	#endif
+	micPeakReset(sPeak);
+	sWindowActive = false;
 }
 
-
-void MicStereo::MicLoop() {
-	unsigned int signalMaxL = 0;
-	unsigned int signalMinL = 1024;
-
-	unsigned int signalMaxR = 0;
-	unsigned int signalMinR = 1024;
-	startMillis = millis();
-
-
-    int micRStatus = analog::ext_analog_3;
-   	unsigned int micR255 = map(micRStatus, 0, 1023, 0, 255);
-
-    int micLStatus = analog::ext_analog_1;
-	unsigned int micL255 = map(micLStatus, 0, 1023, 0, 255);
-
-	while (millis() - startMillis < sampleWindow) {
-		sampleL = analog::ext_analog_1;
-		sampleR = analog::ext_analog_3;
-		if (sampleL < 1024) {
-			if (sampleL > signalMaxL) signalMaxL = sampleL;
-			if (sampleL < signalMinL) signalMinL = sampleL;
-		}
-		if (sampleR < 1024) {
-			if (sampleR > signalMaxR) signalMaxR = sampleR;
-			if (sampleR < signalMinR) signalMinR = sampleR;
-		}
-	}
-
-
-    if (micR255 > MicStereo::baseRSound) {
-		#if LOG_DEBUG
-			if (main::Found_Display) {
+static void micApplyLeds(unsigned int micL255, unsigned int micR255) {
+	if (micR255 > MicStereo::baseRSound) {
+		#if LOG_VERBOSE
+			if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
 				logger::log(" R-Mic: ");
-				logger::logInt(micR255); }
+				logger::logInt(micR255);
+			}
 		#endif
-		if ((USE_PWM_BOARD && !main::use_pwm_board) || main::use_pwm_board) {
+		if (FEATURE_ENABLED(main::use_pwm_board, USE_PWM_BOARD)) {
 			pwm_board::RGBled(micR255, micR255, 0);
 		}
 	}
 	if (micL255 > MicStereo::baseLSound) {
-		#if LOG_DEBUG
-			if (main::Found_Display) {
+		#if LOG_VERBOSE
+			if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
 				logger::log(" L-Mic: ");
-				logger::logIntln(micL255); }
+				logger::logIntln(micL255);
+			}
 		#endif
-		if ((USE_PWM_BOARD && !main::use_pwm_board) || main::use_pwm_board) {
+		if (FEATURE_ENABLED(main::use_pwm_board, USE_PWM_BOARD)) {
 			pwm_board::RGBled(0, micR255, micL255);
 		}
-	} else {
-		if ((USE_PWM_BOARD && !main::use_pwm_board) || main::use_pwm_board) {
-			pwm_board::RGBled(0, micR255, 0);
-		}
-    }
+	} else if (FEATURE_ENABLED(main::use_pwm_board, USE_PWM_BOARD)) {
+		pwm_board::RGBled(0, micR255, 0);
+	}
+}
+
+void MicStereo::MicLoop() {
+	if (sense_react::isActive() || PS4::isManualControlActive()) {
+		return;
+	}
+
+	const uint32_t now = millis();
+	if (!sWindowActive) {
+		sWindowStartMs = now;
+		micPeakReset(sPeak);
+		sWindowActive = true;
+	}
+
+	micPeakSample(sPeak,
+		static_cast<uint16_t>(analog::ext_analog_1),
+		static_cast<uint16_t>(analog::ext_analog_3));
+
+	if (static_cast<uint32_t>(now - sWindowStartMs) < kMicSampleWindowMs) {
+		return;
+	}
+
+	const unsigned int micR255 = map(analog::ext_analog_3, 0, 1023, 0, 255);
+	const unsigned int micL255 = map(analog::ext_analog_1, 0, 1023, 0, 255);
+	micApplyLeds(micL255, micR255);
+
+	micPeakReset(sPeak);
+	sWindowStartMs = now;
 }

@@ -6,6 +6,27 @@ ESP             3c:e9:0e:89:80:84
 ESP small cam   3C:E9:0E:88:65:16
 PS4 Controller: A4:AE:11:E1:8B:B3 (SONYWA) GooglyEyes
 PS5 Controller: 88:03:4C:B5:00:66
+
+PS4 → UART encoding (this sketch → Serial → UNO R4 RA / PS4.cpp)
+---------------------------------------------------------------------------
+ASCII ints per line; sticks/triggers often as "A+B".
+
+1xxx  D-pad (numpad)     1100 Up   1200 Right  1300 Down  1400 Left
+                         1500 UR   1600 DR     1700 DL    1800 UL
+2xxx  L/R bumpers+sys    2100 L1   2200 R1     2300 L3    2400 R3
+                         2500 PS   2700 Touch  2800 Share 2900 Options
+3xxx  face + misc        3100 Square  3200 Cross  3300 Circle  3400 Triangle
+                         3500 Charging  3600 Audio  3700 Mic
+                         3900+Battery
+
+EVENTS (notify): xx10 = button down, xx01 = button up
+  e.g. 1110 / 1101 D-pad Up; 2110 / 2101 L1; 3110 / 3101 Square.
+
+Analog (base + value, typically -128..127 stick or 0..255 trigger):
+  4xxx L2   4000+L2Value     5xxx R2   5000+R2Value
+  6xxx LX   6127+LStickX     7xxx LY   7127+LStickY   → drive
+  8xxx RX   8127+RStickX     9xxx RY   9127+RStickY   → head
+THUMB_STICKS pairs: "6127+7127", "8127+9127", "4000+5000".
 */
 /********************************************** Setup booting the arduino **************************************/
 // section Defines
@@ -119,8 +140,8 @@ void notify() {
                   (PS4.LStickY() <= -15 || PS4.LStickY() >= 15 ) ? 7127 + PS4.LStickY() : 7127,
                   (PS4.RStickX() <= -15 || PS4.RStickX() >= 15 ) ? 8127 + PS4.RStickX() : 8127,
                   (PS4.RStickY() <= -15 || PS4.RStickY() >= 15 ) ? 9127 + PS4.RStickY() : 9127,
-                  (PS4.L2()) ? PS4.L2Value() : 0,
-                  (PS4.R2()) ? PS4.R2Value() : 0
+                  (PS4.L2()) ? 4000 + PS4.L2Value() : 4000,
+                  (PS4.R2()) ? 5000 + PS4.R2Value() : 5000
     );
 #endif
 
@@ -185,24 +206,44 @@ void loop() {
         #endif
 
         #if THUMB_STICKS
-            if (PS4.LStickY() <= -25 || PS4.LStickY() >= 25 || PS4.LStickX() <= -25 || PS4.LStickX() >= 25 ) {
+            static bool leftStickActive = false;
+            static bool rightStickActive = false;
+            static bool triggerActive = false;
+
+            const bool leftNow = (PS4.LStickY() <= -25 || PS4.LStickY() >= 25 || PS4.LStickX() <= -25 || PS4.LStickX() >= 25);
+            if (leftNow) {
                 Serial.printf("%4d+%4d \r\n",
                               (PS4.LStickX() <= -10 || PS4.LStickX() >= 10) ? 6127 + PS4.LStickX() : 6127,
                               (PS4.LStickY() <= -10 || PS4.LStickY() >= 10) ? 7127 + PS4.LStickY() : 7127
                 );
+                leftStickActive = true;
+            } else if (leftStickActive) {
+                Serial.printf("%4d+%4d \r\n", 6127, 7127);
+                leftStickActive = false;
             }
 
-            if (PS4.RStickX() <= -25 || PS4.RStickX() >= 25 || PS4.RStickY() <= -25 || PS4.RStickY() >= 25 ) {
+            const bool rightNow = (PS4.RStickX() <= -25 || PS4.RStickX() >= 25 || PS4.RStickY() <= -25 || PS4.RStickY() >= 25);
+            if (rightNow) {
                 Serial.printf("%4d+%4d \r\n",
                               (PS4.RStickX() <= -10 || PS4.RStickX() >= 10) ? 8127 + PS4.RStickX() : 8127,
                               (PS4.RStickY() <= -10 || PS4.RStickY() >= 10) ? 9127 + PS4.RStickY() : 9127
                 );
+                rightStickActive = true;
+            } else if (rightStickActive) {
+                Serial.printf("%4d+%4d \r\n", 8127, 9127);
+                rightStickActive = false;
             }
-            if(PS4.L2Value() > 45 || PS4.R2Value() > 45) {
+
+            const bool triggerNow = (PS4.L2Value() > 45 || PS4.R2Value() > 45);
+            if (triggerNow) {
                 Serial.printf("%4d+%4d \r\n",
                               (PS4.L2()) ? 4000 + PS4.L2Value() : 4000,
                               (PS4.R2()) ? 5000 + PS4.R2Value() : 5000
                 );
+                triggerActive = true;
+            } else if (triggerActive) {
+                Serial.printf("%4d+%4d \r\n", 4000, 5000);
+                triggerActive = false;
             }
         #elif BUTTONS
             if (PS4.L2()) { Serial.println(4000 + PS4.L2Value());  }

@@ -8,6 +8,9 @@
 
 #include "config.h"
 
+// SD present → runtime use_* flags. No SD → compile-time USE_* from config.h.
+#define FEATURE_ENABLED(use_flag, USE_MACRO) (main::use_sd_card ? (use_flag) : (USE_MACRO))
+
 class main {
 
 public:
@@ -32,20 +35,20 @@ public:
 	static bool use_compass;
 	static bool use_barometer;
 	static bool use_distance;
-	static bool use_irremote;
 	static bool use_i2c_scanner;
 	static bool use_pwm_board;
 	static bool use_dot;
-	static bool use_mic;
+	static bool use_audio;
 	static bool use_switch;
 	static bool use_analog;
+	static bool use_light;
 	static bool use_robot;
 	static bool use_timers;
 	static bool use_matrix;
 	static bool use_matrix_preview;
 	static bool read_esp32;
 	static bool use_lcd;
-	static bool use_hm_10_ble;
+	static bool use_oled_sensors;
 
 
 

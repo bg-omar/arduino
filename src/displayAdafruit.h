@@ -8,6 +8,8 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <Fonts/TomThumb.h>
+#include "oled_mode.h"
+#include "oled_face_clip.h"
 
 
 #define i2c_Address 0x3C
@@ -49,6 +51,19 @@ public:
 
 	static void displayLoop();
 	static void setupAdafruit();
+
+	static void setMode(OledMode mode);
+	static OledMode getMode();
+	static void markMenuDirty();
+	static bool isMenuDirty();
+	static void clearMenuDirty();
+	static void activatePet();
+	static void tickPet();
+	static void drawSensorsPage();
+	static void setSenseReactFace(OledFaceClipId clip, const char* label,
+			PestoEmotion emotion = PestoEmotion::Idle);
+	static void setAvoidFace(const char* label);
+	static void drawSenseReactPage();
 
 	static Adafruit_SH1106G display;
 	static int t;

@@ -5,6 +5,10 @@
 #ifndef PESTO_MATRIX_H
 #define PESTO_MATRIX_H
 
+#include <Arduino.h>
+#include <cstdint>
+
+#include "pesto_emotion.h"
 
     /********************************************** the function for dot matrix display ****************************/
     // section Pesto Matrix
@@ -12,7 +16,12 @@
     class Pesto {
     private:
         static int screen;
+        static PestoEmotion heldEmotion;
+        static uint32_t holdUntilMs;
 
+        static const unsigned char* bitmapFor(PestoEmotion e);
+        static bool holdActive(uint32_t nowMs);
+        static void displayEmotion(PestoEmotion e);
 
     public:
         /********************************************** Make DotMatric Images*******************************************/
@@ -45,6 +54,10 @@
         static void IIC_send(unsigned char send_data);
         static void IIC_end();
         static void matrix_display(unsigned char matrix_value[]);
+        static void showEmotion(PestoEmotion e, uint32_t nowMs,
+                                uint32_t holdMs = PESTO_EMOTION_HOLD_MS);
+        static void displayBitmap(const uint8_t colMajor16[16]);
+        static void syncFromOledFrame(const uint8_t* oled1024);
         static void pestoMatrix();
         static void setup_pestoMatrix();
     };

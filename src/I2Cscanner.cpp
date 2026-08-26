@@ -3,52 +3,43 @@
 //
 
 #include "logger.h"
-#include "main_ra.h"
 #include "I2Cscanner.h"
+#include "config_summary.h"
+#include "log_buffer.h"
 #include <Wire.h>
 
 void I2Cscanner::scan() {
-    byte error, address;
-    int nDevices;
+	char line[LogBuffer::kLineLength];
+	size_t used = 0;
+	int nDevices = 0;
+	line[0] = '\0';
+	summaryAppend(line, sizeof(line), used, "I2C");
 
-    logger::logln("I2C Scanning...");
-    nDevices = 0;
+	for (byte address = 1; address < 127; address++) {
+		Wire.beginTransmission(address);
+		const byte error = Wire.endTransmission();
 
-    delay(200);
-    for(address = 1; address < 127; address++ ) {
-        Wire.beginTransmission(address);
-        error = Wire.endTransmission();
+		if (error == 0) {
+			char hex[3];
+			summaryHexByte(hex, address);
+			if (!summaryAppend(line, sizeof(line), used, hex)) {
+				logger::logln(line);
+				used = 0;
+				line[0] = '\0';
+				summaryAppend(line, sizeof(line), used, hex);
+			}
+			nDevices++;
+		} else if (error == 4) {
+			char hex[3];
+			summaryHexByte(hex, address);
+			logger::log("I2C err ");
+			logger::logln(hex);
+		}
+	}
 
-        if (error == 0) {
-			logger::log(" 0x");
-            if (address<16) {
-				logger::log("0");
-            }
-#if LOG_DEBUG
-            if (main::Found_Display) logger::logHexln(address, HEX);
-#endif
-			logger::log(reinterpret_cast<const char *>(address));
-			logger::log(", ");
-            nDevices++;
-            delay(200);
-        }
-        else if (error==4) {
-			logger::log("Unknown error at address 0x");
-            if (address<16) {
-				logger::log("0 ");
-            }
-#if LOG_DEBUG
-            if (main::Found_Display) logger::logHexln(address, HEX);
-#endif
-			logger::log(reinterpret_cast<const char *>(address));
-        }
-    }
-    delay(20);
-	logger::log(" devices: ");
-    logger::logln(reinterpret_cast<const char *>(nDevices));
-
-    delay(100);
-    if (nDevices == 0) {
-        logger::logln("-- No I2C devices found--");
-    }
+	if (nDevices == 0) {
+		logger::logln("I2C none");
+	} else {
+		logger::logln(line);
+	}
 }

@@ -10,6 +10,11 @@
 #include "ADS1X15.h"
 #include "Wire.h"
 
+int16_t analog::ext_analog_0 = 0;
+int16_t analog::ext_analog_1 = 0;
+int16_t analog::ext_analog_2 = 0;
+int16_t analog::ext_analog_3 = 0;
+
 // Declare ADS as a pointer
 ADS1015* ADS = nullptr;
 
@@ -19,10 +24,10 @@ void analog::analogSetup()
 	ADS = new ADS1015(0x48);
 
 	if (!ADS->begin()) {
-		logger::log("ADS1015 LIB failed");
+		logger::logln("ADS fail");
 		main::use_analog = false;
 	} else {
-		logger::log("ADS1015 LIB loaded");
+		logger::logln("ADS ok");
 	}
 }
 
@@ -37,16 +42,17 @@ void analog::analogLoop()
 	analog::ext_analog_3 = ADS->readADC(MIC_R_PIN);
 
 #if LOG_VERBOSE
-	float toVoltage = ADS->toVoltage(1);  // Voltage factor
-	logger::log("light_L: ");
-	logger::logInt(ext_analog_0);
-	logger::log(" ");
-	logger::log("light_R: ");
-	logger::logInt(ext_analog_2);
-	logger::log(" \t");
-	logger::log(" MIC_L_PIN: ");
-	logger::logInt(ext_analog_1);
-	logger::log(" MIC_R_PIN: ");
-	logger::logIntln(ext_analog_3);
+	if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
+		logger::log("light_L: ");
+		logger::logInt(ext_analog_0);
+		logger::log(" ");
+		logger::log("light_R: ");
+		logger::logInt(ext_analog_2);
+		logger::log(" \t");
+		logger::log(" MIC_L_PIN: ");
+		logger::logInt(ext_analog_1);
+		logger::log(" MIC_R_PIN: ");
+		logger::logIntln(ext_analog_3);
+	}
 #endif
 }

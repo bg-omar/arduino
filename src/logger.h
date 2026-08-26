@@ -22,6 +22,9 @@ public:
 
 	static void logDoubble(double floaty);
 	static void logDoubbleln(double floaty);
+
+	static void endBootLog();
+	static bool isOledEnabled();
 };
 
 

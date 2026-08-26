@@ -8,6 +8,8 @@
 #include "PS4.h"
 #include "pwm_board.h"
 #include "analog.h"
+#include "main_ra.h"
+#include "config.h"
 
 
 /*************************************************** Light Follow **********************************************/
@@ -17,7 +19,7 @@
 
 int Follow_light::lightSensorL;
 int Follow_light::lightSensorR;
-short analog::ext_analog_0, analog::ext_analog_2;
+bool Follow_light::active = false;
 
 double Follow_light::lightSensor(){
     Follow_light::lightSensorL = analog::ext_analog_0 ;
@@ -28,25 +30,58 @@ double Follow_light::lightSensor(){
     return (calcValue < 0) ? 0 : calcValue;
 }
 
+void Follow_light::start() {
+    if (!FEATURE_ENABLED(main::use_light, USE_LIGHT)) {
+        return;
+    }
+    active = true;
+}
+
+void Follow_light::stop() {
+    if (!active) {
+        return;
+    }
+    active = false;
+    Motor::Car_Stop();
+}
+
+bool Follow_light::isActive() {
+    return active;
+}
+
+void Follow_light::tick() {
+    if (!active) {
+        return;
+    }
+    if (!FEATURE_ENABLED(main::use_light, USE_LIGHT)) {
+        stop();
+        return;
+    }
+    if (PS4::exitLoop()) {
+        stop();
+        return;
+    }
+
+    lightSensor();
+    pwm_board::RainbowColor();
+
+    if (lightSensorR > 650 && lightSensorL > 650) {
+        Motor::Car_front();
+    }
+    else if (lightSensorR > 650) {
+        Motor::Car_left();
+    }
+    else if (lightSensorL > 650) {
+        Motor::Car_right();
+    }
+    else {
+        Motor::Car_Stop();
+    }
+}
 
 void Follow_light::light_track() {
-    int flag =0;
-    while (flag == 0) {
-        lightSensor();
-        pwm_board::RainbowColor();
-
-        if (lightSensorR > 650 && lightSensorL > 650) {
-            Motor::Car_front();
-        }
-        else if (lightSensorR > 650) {
-            Motor::Car_left();
-        }
-        else if (lightSensorL > 650) {
-            Motor::Car_right();
-        }
-        else {
-            Motor::Car_Stop();
-        }
-        flag = PS4::exitLoop();
+    if (!FEATURE_ENABLED(main::use_light, USE_LIGHT)) {
+        return;
     }
+    start();
 }

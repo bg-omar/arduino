@@ -11,8 +11,15 @@ class dancing {
 public:
     static long  randomXY, randomZ;
     static void dance();
+    static void start();
+    static void stop();
+    static void tick();
+    static bool isActive();
 
     static int exitLoop();
+
+private:
+    static bool active;
 };
 
 

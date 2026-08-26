@@ -25,6 +25,7 @@ USB-Shield BT   00:1a:7d:da:71:13
 #include <cmath>
 
 #include <Adafruit_Sensor.h>
+#include "Arduino_LED_Matrix.h"
 
 #include "PS4.h"
 #include "secrets.h"
@@ -50,9 +51,13 @@ USB-Shield BT   00:1a:7d:da:71:13
 
 #include "analog.h"
 #include "SD_card.h"
+#include "deadline.h"
+#include "sense_react.h"
+#include "robot_modes.h"
+#include "laser_beam.h"
+#include "radar_scan.h"
 
-
-bool main::Found_Display;
+bool main::Found_Display = false;
 bool main::Found_Gyro = false;
 bool main::Found_Compass = false;
 bool main::Found_Mics = false;
@@ -73,20 +78,20 @@ bool main::use_gyro = false;
 bool main::use_compass = false;
 bool main::use_barometer = false;
 bool main::use_distance = false;
-bool main::use_irremote = false;
 bool main::use_i2c_scanner = false;
 bool main::use_pwm_board = false;
 bool main::use_dot = false;
-bool main::use_mic = false;
+bool main::use_audio = false;
 bool main::use_switch = false;
 bool main::use_analog = false;
+bool main::use_light = false;
 bool main::use_robot = false;
-bool main::use_timers = false;
-bool main::use_matrix = false;
+bool main::use_timers = true;
+bool main::use_matrix = true;
 bool main::use_matrix_preview = false;
 bool main::read_esp32 = false;
 bool main::use_lcd = false;
-bool main::use_hm_10_ble = false;
+bool main::use_oled_sensors = false;
 
 //int timers::timerButton;
 
@@ -97,7 +102,7 @@ int Switch_8_State, Switch_9_State;
 
 // Define an array to hold pixel data for a single frame (4 pixels)
 uint32_t frame[] = {0, 0, 0, 0xFFFF};
-//ArduinoLEDMatrix matrix;
+ArduinoLEDMatrix matrix;
 
 
 /********************************************** Setup booting the arduino **************************************/
@@ -108,16 +113,13 @@ void setup(){
 	Serial.begin(9600);// Initialize the hardware serial port for debugging
 	displayAdafruit::setupAdafruit();
 
-	logger::logln("Wall-Z Arduino Robot booting\n");
+	logger::logln("Wall-Z boot");
 
 	delay(1);
-	logger::log("Serial");
-	delay(1);
 	Serial1.begin(115200);
-	logger::log("Serial1 & ");
 	delay(1);
 	SERIAL_AT.begin(115200);
-	logger::logln("Serial_AT 115200");
+	logger::logln("UART 9600/115200");
 	delay(1);
 
 	Motor::motor_setup();
@@ -130,7 +132,7 @@ void setup(){
 		if(main::use_analog) {
 			analog::analogSetup();
 
-			if(main::use_mic) {
+			if(main::use_audio) {
 				MicStereo::MicSetup();
 				delay(500);
 			}
@@ -150,24 +152,24 @@ void setup(){
 			delay(500);
 		}
 
-		if(main::use_pwm_board) { pwm_board::setupPWM();   logger::logln(" PWM board enabled");}
+		if(main::use_pwm_board) { pwm_board::setupPWM();   logger::logln("PWM ok");}
 		delay(500);
-//
-//		if(main::use_matrix_preview) {matrix.begin();}
-//		else if(main::use_matrix) {
-//			matrix.loadSequence(animation);
-//			matrix.begin();
-//			matrix.autoscroll(300);
-//			matrix.play(true);
-//			delay(500);
-//			logger::logln(" R4 matrix ");
-//		}
+		if(main::use_matrix_preview) {
+			matrix.begin();
+		} else if(main::use_matrix) {
+			matrix.loadSequence(animation);
+			matrix.begin();
+			matrix.autoscroll(300);
+			matrix.play(true);
+			delay(500);
+			logger::logln(" R4 matrix ");
+		}
 
 
 		if(main::use_distance) {
 			pinMode(Trig_PIN, OUTPUT);    /***** 6 ******/
 			pinMode(Echo_PIN, INPUT);     /***** 7 ******/
-			logger::logln(" Sonar --> use_distance ");
+			logger::logln("Sonar ok");
 			delay(500);
 		}
 
@@ -191,12 +193,12 @@ void setup(){
 			delay(500);
 		}
 
-//		if(main::use_timers) {
-//			timers::initTimers();
-//			delay(500);
-//
-//        }
-		logger::logln("Setup from SD Complete");
+		if(main::use_timers) {
+			timers::initTimers();
+			delay(500);
+
+        }
+		logger::logln("Setup SD done");
 	} else {
 		logger::logln("Setup from config.h");
 		#if USE_ROUND
@@ -210,6 +212,11 @@ void setup(){
 
 		#if USE_ANALOG
 			analog::analogSetup();
+		#endif
+
+		#if USE_AUDIO
+			MicStereo::MicSetup();
+			delay(500);
 		#endif
 
 		#if USE_SWITCH
@@ -255,11 +262,6 @@ void setup(){
 			delay(500);
 		#endif
 
-		#if USE_MIC
-			MicStereo::MicSetup();
-			delay(500);
-		#endif
-
 		#if USE_COMPASS
 			compass::compassSetup();
 			delay(500);
@@ -283,12 +285,10 @@ void setup(){
 		//        delay(500);
 		#endif
 
-		#if USE_HM_10_BLE
-			BLE::BLEsetup();
-		#endif
 		logger::logln("Setup from config.h Complete");
 	}
 	logger::logln("Starting loop");
+	logger::endBootLog();
 }
 
 /*********************************** Loop **********************************/
@@ -296,103 +296,198 @@ void setup(){
 /***************************************************************************/
 
 void loop(){
-    if ((USE_PS4 && !main::use_sd_card) || main::use_ps4) {
-		PS4::controller();
-	}
+	const uint32_t now = millis();
 
-	if ((USE_ADAFRUIT && !main::use_adafruit) || main::use_adafruit) {
-		displayAdafruit::displayLoop();
+	auto pollPs4 = []() {
+		if (FEATURE_ENABLED(main::use_ps4, USE_PS4)) {
+			PS4::pollInput();
+		}
+	};
+
+	pollPs4();
+
+	#if USE_ROBOT
+	auto tickRobotModes = [&]() {
+		if (main::use_sd_card && !main::use_robot) {
+			return;
+		}
+		if (radar_scan::isActive()) {
+			radar_scan::tick();
+			pollPs4();
+			return;
+		}
+		if (avoid_objects::isActive()) {
+			avoid_objects::tick();
+		}
+		pollPs4();
+		if (Follow_light::isActive()) {
+			Follow_light::tick();
+		}
+		pollPs4();
+		if (dancing::isActive()) {
+			dancing::tick();
+		}
+		pollPs4();
+		if (sense_react::isActive()) {
+			sense_react::tick();
+		}
+	};
+	if (main::use_sd_card) {
+		if (main::use_robot) {
+			tickRobotModes();
+		}
+	} else {
+		tickRobotModes();
 	}
+	#endif
+
+	displayAdafruit::displayLoop();
 
 	if (main::use_menu) {
 		menu::loopMenu();
 	}
 
-	if ((USE_SWITCH && !main::use_switch) || main::use_switch) {
-        //Switch_8_State = digitalRead(SWITCH_8);
-        //Switch_9_State = digitalRead(SWITCH_9);
-        delay(5);
-        //if (Switch_8_State == HIGH) { displayAdafruit::petStatus = 0;} else { displayAdafruit::petStatus = 1;}
-        //if (Switch_9_State == HIGH) { compass::displayCompass();} else { displayAdafruit::animateScreen(); }
-        delay(50);
-    }
+	pollPs4();
 
-	if ((USE_ANALOG && !main::use_sd_card) || main::use_analog) {
-		analog::analogLoop();
+	if (FEATURE_ENABLED(main::use_switch, USE_SWITCH)) {
+		Switch_8_State = digitalRead(SWITCH_8);
+		Switch_9_State = digitalRead(SWITCH_9);
 	}
 
-    if((USE_GYRO && !main::use_sd_card) || main::use_gyro || main::Found_Gyro){
-		gyroscope::gyroDetectMovement();
+	static uint32_t lastAnalogMs = 0;
+	if (FEATURE_ENABLED(main::use_analog, USE_ANALOG)) {
+		if (elapsed(now, lastAnalogMs, 20)) {
+			analog::analogLoop();
+		}
 	}
 
-    if ((USE_DISTANCE && !main::use_sd_card) || main::use_distance) {
-		int distance = std::lround(avoid_objects::checkDistance());  /// assign the front distance detected by ultrasonic sensor to variable a
+	static uint32_t lastGyroMs = 0;
+	if (FEATURE_ENABLED(main::use_gyro, USE_GYRO) || main::Found_Gyro) {
+		if (elapsed(now, lastGyroMs, 50)) {
+			gyroscope::gyroDetectMovement();
+		}
+	}
 
-		#if LOG_DEBUG
-			if (main::Found_Display) {
-				logger::log("Distance: ");
-				logger::logIntln(distance);
-			}
+	if (main::use_sd_card) {
+		if (main::use_audio) {
+			MicStereo::MicLoop();
+		}
+	} else {
+		#if USE_AUDIO
+			MicStereo::MicLoop();
 		#endif
+	}
 
-		int lazer_brightness = map(distance, 0, 1000, 0, 4000);
-		pwm_board::pwm.setPWM(LAZER_PIN, 0, lazer_brightness);
-		if (distance < 35) {
-			if ((USE_PWM_BOARD && !main::use_pwm_board) || main::use_pwm_board) {
-				pwm_board::leftLedStrip(255, 0, 0);
-				pwm_board::rightLedStrip(255, 0, 0);
-			}
-		} else {
-			if ((USE_PWM_BOARD && !main::use_pwm_board) || main::use_pwm_board) {
-				pwm_board::leftLedStrip(70, 0, 70);
-				pwm_board::rightLedStrip(70, 0, 70);
+	if (FEATURE_ENABLED(main::use_distance, USE_DISTANCE)) {
+		static uint32_t lastSonarMs = 0;
+		if (elapsed(now, lastSonarMs, 60)) {
+			int distance = std::lround(avoid_objects::checkDistance());
+
+			#if LOG_VERBOSE
+				if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
+					logger::log("Distance: ");
+					logger::logIntln(distance);
+				}
+			#endif
+
+			int lazer_brightness = map(distance, 0, 1000, 0, 4000);
+			lazer_brightness = laser_beam::pwmForDistance(lazer_brightness);
+			if (FEATURE_ENABLED(main::use_pwm_board, USE_PWM_BOARD)) {
+				pwm_board::pwm.setPWM(LAZER_PIN, 0, lazer_brightness);
+				if (!robot_modes::anyActive()) {
+					if (distance >= 0 && distance < 35) {
+						pwm_board::leftLedStrip(255, 0, 0);
+						pwm_board::rightLedStrip(255, 0, 0);
+					} else {
+						pwm_board::leftLedStrip(70, 0, 70);
+						pwm_board::rightLedStrip(70, 0, 70);
+					}
+				}
 			}
 		}
-
-
-		double deltime = distance * 3;
-		delay(deltime);
-	} else {
-		pwm_board::leftLedStrip(0, 0, 70);
-		pwm_board::rightLedStrip(0, 0, 70);
+	} else if (FEATURE_ENABLED(main::use_pwm_board, USE_PWM_BOARD)) {
+		static uint32_t lastIdleLedMs = 0;
+		if (!robot_modes::anyActive() && elapsed(now, lastIdleLedMs, 200)) {
+			lastIdleLedMs = now;
+			pwm_board::leftLedStrip(0, 0, 70);
+			pwm_board::rightLedStrip(0, 0, 70);
+		}
 	}
 
-	#if USE_DOT
-		Pesto::pestoMatrix();
+	pollPs4();
+
+	const bool pestoOledSync = sense_react::isActive() || avoid_objects::isActive();
+	if (main::use_sd_card) {
+		if (main::use_dot && !main::use_timers && !pestoOledSync) {
+			Pesto::pestoMatrix();
+		}
+	} else {
+		#if USE_DOT && !USE_TIMERS
+			if (!pestoOledSync) {
+				Pesto::pestoMatrix();
+			}
+		#endif
+	}
+
+	if (main::use_sd_card) {
+		if (main::use_timers) {
+			timers::update();
+		}
+	} else {
+		#if USE_TIMERS
+			timers::update();
+		#endif
+	}
+
+	if (main::use_sd_card) {
+		if (main::read_esp32) {
+			if (SERIAL_AT.available()) {
+				#if LOG_VERBOSE
+					if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
+						logger::log("ESP32 says: ");
+					}
+				#endif
+				while (SERIAL_AT.available()) {
+					Serial.write(SERIAL_AT.read());
+				}
+			}
+		}
+	} else {
+		#if READ_ESP32
+			if (SERIAL_AT.available()) {
+				#if LOG_VERBOSE
+					if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
+						logger::log("ESP32 says: ");
+					}
+				#endif
+				while (SERIAL_AT.available()) {
+					Serial.write(SERIAL_AT.read());
+				}
+			}
+		#endif
+	}
+
+	#if USE_MATRIX_PREVIEW
+	if (main::use_sd_card) {
+		if (main::use_matrix_preview) {
+			if(Serial.available() >= 12){
+				frame[0] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+				frame[1] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+				frame[2] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+				matrix.loadFrame(frame);
+			}
+		}
+	} else {
+		if(Serial.available() >= 12){
+			frame[0] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+			frame[1] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+			frame[2] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+			matrix.loadFrame(frame);
+		}
+	}
 	#endif
 
-	#if USE_MIC
-		MicStereo::MicLoop();
-	#endif
-
-    #if USE_TIMERS
-        timers::update();
-    #endif
-
-    #if READ_ESP32
-        // Read messages from Arduino R4 ESP32
-            if (SERIAL_AT.available()) {
-                main::log("ESP32 says: ");
-                while (SERIAL_AT.available()) {
-                    Serial.write(SERIAL_AT.read());
-                    main::logln(SERIAL_AT.read());
-                }
-            }
-    #endif
-
-    #if USE_MATRIX_PREVIEW
-        // Check if there are at least 12 bytes available in the serial buffer
-        if(Serial.available() >= 12){
-            // Read 4 bytes from the serial buffer and compose them into a 32-bit value for each element in the frame
-            frame[0] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
-            frame[1] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
-            frame[2] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
-
-            // Load and display the received frame data on the LED matrix
-            matrix.loadFrame(frame);
-        }
-    #endif
-
+	pollPs4();
 }
 
 

@@ -12,6 +12,13 @@ public:
 	static void up();
 	static void down();
 	static void select();
+	static void open();
+	static void toggle();
+	static void closeDiscard();
+	static void undo();
+	static void save();
+	static bool isOpen();
+	static void toggleSensorsPage();
 };
 
 #endif //ARDUINO_R4_UNO_WALL_Z_MENU_H

@@ -9,203 +9,175 @@
 #include <SPI.h>
 #include "SdFat.h"
 #include "logger.h"
-#include <iostream>
-#include <vector>
+#include "config_summary.h"
+#include "log_buffer.h"
 #include <cstring>
-
 
 SdFat SD;
 File file;
 char line[40];
-char str[] = "";
 const char* delim = ",";
-
-std::vector<std::string> configName;
-std::vector<int> configValue = {};
 
 void openFile(int rule);
 
-//------------------------------------------------------------------------------
-#define errorHalt(msg) {Serial.println(F(msg)); while (true) {}}
-//------------------------------------------------------------------------------
-void SD_card::initSD() {
-	// Wait for USB Serial
-	while (!Serial) {
-		yield();
+struct ConfigEntry {
+	const char* key;
+	bool* flag;
+};
+
+static ConfigEntry configEntries[] = {
+	{"USE_ADAFRUIT", &main::use_adafruit},
+	{"USE_U8G2", &main::use_u8g2},
+	{"SMALL", &main::small},
+	{"DISPLAY_DEMO", &main::display_demo},
+	{"USE_ROUND", &main::use_round},
+	{"USE_MENU", &main::use_menu},
+	{"LOG_DEBUG", &main::log_debug},
+	{"USE_PS4", &main::use_ps4},
+	{"USE_SD_CARD", &main::use_sd_card},
+	{"USE_GYRO", &main::use_gyro},
+	{"USE_COMPASS", &main::use_compass},
+	{"USE_BAROMETER", &main::use_barometer},
+	{"USE_DISTANCE", &main::use_distance},
+	{"USE_I2C_SCANNER", &main::use_i2c_scanner},
+	{"USE_PWM_BOARD", &main::use_pwm_board},
+	{"USE_DOT", &main::use_dot},
+	{"USE_AUDIO", &main::use_audio},
+	{"USE_SWITCH", &main::use_switch},
+	{"USE_ANALOG", &main::use_analog},
+	{"USE_LIGHT", &main::use_light},
+	{"USE_ROBOT", &main::use_robot},
+	{"USE_TIMERS", &main::use_timers},
+	{"USE_MATRIX", &main::use_matrix},
+	{"USE_MATRIX_PREVIEW", &main::use_matrix_preview},
+	{"READ_ESP32", &main::read_esp32},
+	{"USE_LCD", &main::use_lcd},
+	{"USE_OLED_SENSORS", &main::use_oled_sensors},
+};
+
+static bool applyConfigKey(const char* key, int value) {
+	if (strcmp(key, "USE_MIC") == 0) {
+		main::use_audio = (value == 1);
+		return true;
+	}
+	if (strcmp(key, "USE_HM_10_BLE") == 0 || strcmp(key, "USE_IRREMOTE") == 0) {
+		return true;
 	}
 
-	// Initialize the SD.
+	for (size_t i = 0; i < sizeof(configEntries) / sizeof(configEntries[0]); ++i) {
+		if (strcmp(key, configEntries[i].key) == 0) {
+			*configEntries[i].flag = (value == 1);
+			return true;
+		}
+	}
+	return false;
+}
+
+static void logAllConfigFlags() {
+	const size_t n = sizeof(configEntries) / sizeof(configEntries[0]);
+	char line[LogBuffer::kLineLength];
+	for (size_t i = 0; i < n; i += 2) {
+		const bool hasSecond = (i + 1) < n;
+		formatFlagPair(
+				line,
+				sizeof(line),
+				configDisplayName(configEntries[i].key),
+				*configEntries[i].flag,
+				hasSecond ? configDisplayName(configEntries[i + 1].key) : "",
+				hasSecond,
+				hasSecond ? *configEntries[i + 1].flag : false);
+		logger::logln(line);
+	}
+}
+
+//------------------------------------------------------------------------------
+void logSdError(const char* msg) {
+	logger::logln(msg);
+}
+//------------------------------------------------------------------------------
+void SD_card::initSD() {
 	if (!SD.begin(CS_PIN, SD_SCK_MHZ(16))) {
-		logger::logln("SD card init failed");
+		logger::logln("SD fail");
 		main::use_sd_card = false;
 	} else {
-		logger::logln("SD card initialized");
+		logger::logln("SD ok");
 		main::use_sd_card = true;
 		configLoadSD();
 	}
 }
 
 //------------------------------------------------------------------------------
-// Store error strings in flash to save RAM.
-#define error(s) sd.errorHalt(&Serial, F(s))
-//------------------------------------------------------------------------------
-// Check for extra characters in field or find minus sign.
 char* skipSpace(char* str) {
-	while (isspace(*str)) str++;
+	while (isspace(static_cast<unsigned char>(*str))) {
+		str++;
+	}
 	return str;
 }
 //------------------------------------------------------------------------------
 
 bool parseLine(char* str) {
+	char* key = strtok(str, delim);
+	if (!key) {
+		return false;
+	}
+
+	char* valStr = strtok(nullptr, delim);
+	if (!valStr) {
+		return false;
+	}
+
 	char* ptr;
+	int32_t i32 = strtol(valStr, &ptr, 0);
+	if (valStr == ptr || *skipSpace(ptr)) {
+		return false;
+	}
 
-	// Set strtok start of line.
-	str = strtok(str, delim);
-	if (!str) return false;
+	if (!applyConfigKey(key, static_cast<int>(i32))) {
+		#if LOG_VERBOSE
+			logger::log("SD unknown key: ");
+			logger::logln(key);
+		#endif
+	}
 
-	configName.emplace_back(str); // Append each token to the vector
-
-	// Subsequent calls to strtok expects a null pointer.
-	str = strtok(nullptr, delim);
-	if (!str) return false;
-
-	// Convert string to long integer.
-	int32_t i32 = strtol(str, &ptr, 0);
-	if (str == ptr || *skipSpace(ptr)) return false;
-	configValue.push_back(i32);
-
-
-	// Check for extra fields.
 	return strtok(nullptr, delim) == nullptr;
 }
 //------------------------------------------------------------------------------
 
 void SD_card::configLoadSD() {
 	openFile(FILE_WRITE);
-	file.rewind();  // Rewind the file for read.
+	if (!file) {
+		return;
+	}
+	file.rewind();
 
 	while (file.available()) {
 		int n = file.fgets(line, sizeof(line));
 		if (n <= 0) {
-			errorHalt("fgets failed");
+			logSdError("fgets failed");
+			break;
 		}
-		if (line[n-1] != '\n' && n == (sizeof(line) - 1)) {
-			errorHalt("line too long");
+		if (line[n - 1] != '\n' && n == (static_cast<int>(sizeof(line)) - 1)) {
+			logSdError("line too long");
+			continue;
 		}
 		if (!parseLine(line)) {
-			errorHalt("parseLine failed");
+			logSdError("parseLine failed");
+			continue;
 		}
 	}
 
-	#if LOG_VERBOSE
-		std::cout << "configName:" << std::endl;
-		for (const auto& tok : configName) {
-			std::cout << tok  << " ";
-		}
-		std::cout << std::endl;
-
-		std::cout << "configValue: ";
-		for (int i : configValue) {
-			std::cout << i << " ";
-		}
-		std::cout << std::endl;
-	#endif
-
-	logger::logln("configName & configValue arrays build");
-
-	main::use_adafruit = 		 configValue[0] == 1;
-	main::use_u8g2 = 			 configValue[1] == 1;
-	main::small = 				 configValue[2] == 1;
-	main::display_demo = 		 configValue[3] == 1;
-	main::use_round = 			 configValue[4] == 1;
-	main::use_menu = 			 configValue[5] == 1;
-	main::log_debug = 			 configValue[6] == 1;
-	main::use_ps4 = 			 configValue[7] == 1;
-	main::use_sd_card = 		 configValue[8] == 1;
-	main::use_gyro = 			 configValue[9] == 1;
-	main::use_compass = 		 configValue[10] == 1;
-	main::use_barometer = 		 configValue[11] == 1;
-	main::use_distance = 		 configValue[12] == 1;
-	main::use_irremote = 		 configValue[13] == 1;
-	main::use_i2c_scanner = 	 configValue[14] == 1;
-	main::use_pwm_board = 		 configValue[15] == 1;
-	main::use_dot = 			 configValue[16] == 1;
-	main::use_mic = 			 configValue[17] == 1;
-	main::use_switch = 			 configValue[18] == 1;
-	main::use_analog = 			 configValue[19] == 1;
-	main::use_robot = 			 configValue[20] == 1;
-	main::use_timers = 			 configValue[21] == 1;
-	main::use_matrix = 			 configValue[22] == 1;
-	main::use_matrix_preview =	 configValue[23] == 1;
-	main::read_esp32 = 			 configValue[24] == 1;
-	main::use_lcd = 			 configValue[25] == 1;
-	main::use_hm_10_ble = 		 configValue[26] == 1;
-
-	logger::logln("Settings loaded from SD");
-
-	logger::log("use_adafruit: ");
-	logger::logln	(main::use_adafruit ? "true": "false");
-	logger::log("use_u8g2: ");
-	logger::logln	(main::use_u8g2  ? "true": "false");
-	logger::log("small: ");
-	logger::logln	(main::small ? "true": "false");
-	logger::log("display_demo: ");
-	logger::logln	(main::display_demo ? "true": "false");
-	logger::log("use_round: ");
-	logger::logln	(main::use_round ? "true": "false");
-	logger::log("use_menu: ");
-	logger::logln	(main::use_menu ? "true": "false");
-	logger::log("log_debug: ");
-	logger::logln	(main::log_debug ? "true": "false");
-	logger::log("use_ps4: ");
-	logger::logln	(main::use_ps4 ? "true": "false");
-	logger::log("use_sd_card: ");
-	logger::logln	(main::use_sd_card ? "true": "false");
-	logger::log("use_gyro: ");
-	logger::logln	(main::use_gyro ? "true": "false");
-	logger::log("use_compass: ");
-	logger::logln	(main::use_compass ? "true": "false");
-	logger::log("use_barometer: ");
-	logger::logln	(main::use_barometer ? "true": "false");
-	logger::log("use_distance: ");
-	logger::logln	(main::use_distance ? "true": "false");
-	logger::log("use_irremote: ");
-	logger::logln	(main::use_irremote ? "true": "false");
-	logger::log("use_i2c_scanner: ");
-	logger::logln	(main::use_i2c_scanner ? "true": "false");
-	logger::log("use_pwm_board: ");
-	logger::logln	(main::use_pwm_board ? "true": "false");
-	logger::log("use_dot: ");
-	logger::logln	(main::use_dot ? "true": "false");
-	logger::log("use_mic: ");
-	logger::logln	(main::use_mic ? "true": "false");
-	logger::log("use_switch: ");
-	logger::logln	(main::use_switch ? "true": "false");
-	logger::log("use_analog: ");
-	logger::logln	(main::use_analog ? "true": "false");
-	logger::log("use_robot: ");
-	logger::logln	(main::use_robot ? "true": "false");
-	logger::log("use_timers: ");
-	logger::logln	(main::use_timers ? "true": "false");
-	logger::log("use_matrix: ");
-	logger::logln	(main::use_matrix ? "true": "false");
-	logger::log("use_matrix_preview: ");
-	logger::logln	(main::use_matrix_preview ? "true": "false");
-	logger::log("read_esp32: ");
-	logger::logln	(main::read_esp32 ? "true": "false");
-	logger::log("use_lcd: ");
-	logger::logln	(main::use_lcd ? "true": "false");
-	logger::log("use_hm_10_ble: ");
-	logger::logln	(main::use_hm_10_ble ? "true": "false");
-
- 	logger::logln("Config Loaded from SD");
+	logger::logln("SD loaded");
+	logAllConfigFlags();
 	file.close();
 }
 
-void SD_card::configSaveSD() {// Create or open the file.
+void SD_card::configSaveSD() {
 	openFile(FILE_WRITE);
+	if (!file) {
+		return;
+	}
 	logger::logln("Saving to SD");
-	file.rewind(); // Rewind file so config data is not appended.
+	file.rewind();
 
 	String use_adafruit_string =	 	"USE_ADAFRUIT," + 		String(main::use_adafruit) + "\r\n";
 	String use_u8g2_string =		 	"USE_U8G2," + 			String(main::use_u8g2) + "\r\n";
@@ -220,22 +192,21 @@ void SD_card::configSaveSD() {// Create or open the file.
 	String use_compass_string =		 	"USE_COMPASS," + 		String(main::use_compass) + "\r\n";
 	String use_barometer_string =	 	"USE_BAROMETER," + 		String(main::use_barometer) + "\r\n";
 	String use_distance_string =	 	"USE_DISTANCE," + 		String(main::use_distance) + "\r\n";
-	String use_irremote_string =	 	"USE_IRREMOTE," + 		String(main::use_irremote) + "\r\n";
 	String use_i2c_scanner_string =	 	"USE_I2C_SCANNER," + 	String(main::use_i2c_scanner) + "\r\n";
 	String use_pwm_board_string =	 	"USE_PWM_BOARD," + 		String(main::use_pwm_board) + "\r\n";
 	String use_dot_string =			 	"USE_DOT," + 			String(main::use_dot) + "\r\n";
-	String use_mic_string =			 	"USE_MIC," + 			String(main::use_mic) + "\r\n";
+	String use_audio_string =		 	"USE_AUDIO," + 			String(main::use_audio) + "\r\n";
 	String use_switch_string =		 	"USE_SWITCH," + 		String(main::use_switch) + "\r\n";
 	String use_analog_string =		 	"USE_ANALOG," + 		String(main::use_analog) + "\r\n";
+	String use_light_string =		 	"USE_LIGHT," + 			String(main::use_light) + "\r\n";
 	String use_robot_string =		 	"USE_ROBOT," + 			String(main::use_robot) + "\r\n";
 	String use_timers_string =		 	"USE_TIMERS," + 		String(main::use_timers) + "\r\n";
 	String use_matrix_string =		 	"USE_MATRIX," + 		String(main::use_matrix) + "\r\n";
 	String use_matrix_preview_string =	"USE_MATRIX_PREVIEW," + String(main::use_matrix_preview) + "\r\n";
 	String read_esp32_string =		 	"READ_ESP32," + 		String(main::read_esp32) + "\r\n";
 	String use_lcd_string =			 	"USE_LCD," + 			String(main::use_lcd) + "\r\n";
-	String use_hm_10_ble_string =	 	"USE_HM_10_BLE," + 		String(main::use_hm_10_ble);
+	String use_oled_sensors_string =	"USE_OLED_SENSORS," + 	String(main::use_oled_sensors) + "\r\n";
 
-	// Write config data.
 	file.print(F(
 			use_adafruit_string +
 			use_u8g2_string +
@@ -250,20 +221,20 @@ void SD_card::configSaveSD() {// Create or open the file.
 			use_compass_string +
 			use_barometer_string +
 			use_distance_string +
-			use_irremote_string +
 			use_i2c_scanner_string +
 			use_pwm_board_string +
 			use_dot_string +
-			use_mic_string +
+			use_audio_string +
 			use_switch_string +
 			use_analog_string +
+			use_light_string +
 			use_robot_string +
 			use_timers_string +
 			use_matrix_string +
 			use_matrix_preview_string +
 			read_esp32_string +
 			use_lcd_string +
-			use_hm_10_ble_string
+			use_oled_sensors_string
    ));
 
 	file.close();
@@ -273,11 +244,39 @@ void SD_card::configSaveSD() {// Create or open the file.
 void openFile(int rule) {
 	file = SD.open("SETUP.TXT", rule);
 	if (!file) {
-		errorHalt("open failed");
+		logSdError("open failed");
 	}
 }
 
+static File sDataFile;
 
+bool SD_card::fileExists(const char* path) {
+	if (!main::use_sd_card) {
+		return false;
+	}
+	return SD.exists(path);
+}
 
+bool SD_card::openDataFile(const char* path, uint8_t mode) {
+	if (!main::use_sd_card) {
+		return false;
+	}
+	if (sDataFile) {
+		sDataFile.close();
+	}
+	sDataFile = SD.open(path, mode);
+	return static_cast<bool>(sDataFile);
+}
 
+void SD_card::closeDataFile() {
+	if (sDataFile) {
+		sDataFile.close();
+	}
+}
 
+void SD_card::printLine(const char* line) {
+	if (!sDataFile) {
+		return;
+	}
+	sDataFile.println(line);
+}

@@ -8,9 +8,9 @@ This is my source code for my Arduino uno R4 Wifi robot
 |esp32_r4|./src_esp32_r4|
 
 
-The Arduino's onboard ESP32-S3 is programmed seperatly,
-We soldered a ESP32-cam to the MotorShield to receive PS4-controller commands
-We have an other ESP32-Cam on the front to have a video feed
+The Arduino's onboard ESP32-S3 is programmed seperatly [src_esp32_r4],
+We soldered a ESP32-cam to the MotorShield to receive PS4-controller commands [src_esp32_ps4]
+We have an other ESP32-Cam on the front to have a video feed [src_esp32_cam]
  
 
 |Lib-Module| Type|

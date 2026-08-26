@@ -3,6 +3,12 @@
   <component name="AutoImportSettings">
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
+  <component name="BackendCodeEditorMiscSettings">
+    <option name="/Default/Environment/Hierarchy/GeneratedFilesCacheKey/Timestamp/@EntryValue" value="27" type="long" />
+    <option name="/Default/Housekeeping/FeatureSuggestion/FeatureSuggestionManager/DisabledSuggesters/=SwitchToGoToActionSuggester/@EntryIndexedValue" value="true" type="bool" />
+    <option name="/Default/Housekeeping/GlobalSettingsUpgraded/IsUpgraded/@EntryValue" value="true" type="bool" />
+    <option name="/Default/RiderDebugger/RiderRestoreDecompile/RestoreDecompileSetting/@EntryValue" value="false" type="bool" />
+  </component>
   <component name="CMakeProjectFlavorService">
     <option name="flavorId" value="CMakePlainProjectFlavor" />
   </component>
@@ -17,36 +23,145 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="9a7a6b36-a99e-4db6-8829-f78acb2fa3fc" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/ESP32-S3-Wroom-Pinout.png" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/esp32-S3-DevKitC-1-original-pinout-low.jpg" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" />
+    <list default="true" id="9a7a6b36-a99e-4db6-8829-f78acb2fa3fc" name="Changes" comment="Refactor sensor initialization and logging; update configuration files">
+      <change afterPath="$PROJECT_DIR$/.cursor/plans/06-esp32-iot-gateway.plan.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.cursor/plans/07-src-env-upgrade-upload.plan.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/copilot.data.migration.ask2agent.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/easycode.ignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/easycode/codeContext.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/easycode/rc-output.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/editor.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.logs/upload_logs.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/arrow_down.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/arrow_left.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/arrow_right.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/arrow_up.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/bat_0.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/bat_1.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/bat_2.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/bat_3.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/bat_4.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/bluetooth.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/bulb.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/bulb_off.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/bulb_on.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/bullet.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/cancel.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/check.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/clock.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/door.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/face.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/fillstate_1.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/fillstate_2.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/fillstate_3.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/fillstate_4.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/heart.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/home.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/humidity.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/humidity2.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/inverted.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/lock_closed.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/lock_open.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/minus.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/mobile.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/no_con.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/not_inverted.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/person.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/plug.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/plus.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/power_button.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/signal_1.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/signal_2.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/signal_3.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/signal_4.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/siren.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/sun.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/talk.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/temperature.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/timer.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/tool.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/wallplug.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/warning.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/water_tap.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/wifi1.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/wifi2.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/IoT_16x16_icon_set_oled_2_color/window.bmp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/README.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/iot_iconset_16x16.c" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/iot_iconset_16x16.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/IoT_16x16_icon_set_oled_2_color/www.engsta.net.url" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/deadline.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test/hw_sketches/datetime.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test/hw_sketches/datetime.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test/hw_sketches/displayGauge.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test/hw_sketches/displayRound.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test/hw_sketches/displayRound.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test/hw_sketches/index.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test/hw_sketches/inductance.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test/test_deadline/test_deadline.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test/test_esp_gateway/test_esp_gateway.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/Arduino-R4_UNO_Wall-Z.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/Arduino-R4_UNO_Wall-Z.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/platformio.ini" beforeDir="false" afterPath="$PROJECT_DIR$/platformio.ini" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/projectFilesBackup/CMakeListsPrivate.txt" beforeDir="false" afterPath="$PROJECT_DIR$/projectFilesBackup/CMakeListsPrivate.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/I2Cscanner.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/I2Cscanner.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/MicStereo.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/MicStereo.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/MicStereo.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/MicStereo.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/PS4.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/PS4.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/PS4.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/PS4.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/SD_card.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/SD_card.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/SD_card.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/SD_card.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/analog.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/analog.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/avoid_objects.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/avoid_objects.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/avoid_objects.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/avoid_objects.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/barometer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/barometer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/barometer.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/barometer.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/compass.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/compass.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/compass.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/compass.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/config.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/config.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dancing.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/dancing.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dancing.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/dancing.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/displayAdafruit.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/displayAdafruit.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/displayAdafruit.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/displayAdafruit.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/follow_light.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/follow_light.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/follow_light.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/follow_light.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/gyroscope.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/gyroscope.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/logger.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/logger.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/logger.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/logger.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main_ra.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/main_ra.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src_esp32_cam/main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src_esp32_cam/main.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/uno_r3_Pinout.avif" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main_ra.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/main_ra.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/menu.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/menu.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/menu.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/menu.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/motor.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/motor.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/motor.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/motor.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/pesto_matrix.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/pesto_matrix.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/pesto_matrix.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/pesto_matrix.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/pwm_board.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/pwm_board.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/pwm_board.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/pwm_board.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/timers.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src/timers.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/timers.h" beforeDir="false" afterPath="$PROJECT_DIR$/src/timers.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src_esp32_ps4/main_ps4.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src_esp32_ps4/main_ps4.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src_esp32_r4/getPost.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src_esp32_r4/getPost.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src_esp32_r4/getPost.h" beforeDir="false" afterPath="$PROJECT_DIR$/src_esp32_r4/getPost.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src_esp32_r4/main_esp.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src_esp32_r4/main_esp.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src_esp32_r4/real_time.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/src_esp32_r4/real_time.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src_esp32_r4/real_time.h" beforeDir="false" afterPath="$PROJECT_DIR$/src_esp32_r4/real_time.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/README" beforeDir="false" afterPath="$PROJECT_DIR$/test/README" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/datetime.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/datetime.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/displayGauge.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/displayRound.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/displayRound.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/index.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/inductance.cpp" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ChangesViewManager">
+    <option name="groupingKeys">
+      <option value="directory" />
+      <option value="repository" />
+    </option>
   </component>
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
@@ -72,7 +187,7 @@
       </list>
     </option>
   </component>
-  <component name="ExecutionTargetManager" SELECTED_TARGET="esp32_ps4" />
+  <component name="ExecutionTargetManager" SELECTED_TARGET="src" />
   <component name="ExternalProjectsData">
     <projectState path="$PROJECT_DIR$">
       <ProjectState />
@@ -106,12 +221,16 @@
   }
 }</component>
   <component name="GitLabMergeRequestsSettings">{}</component>
-  <component name="GithubDefaultAccount">
-    <option name="defaultAccountId" value="70b2fd67-e2e7-47d3-81b2-8d16146ce31c" />
-  </component>
   <component name="GithubPullRequestsUISettings">{}</component>
+  <component name="HighlightingSettingsPerFile">
+    <setting file="file://$PROJECT_DIR$/src_esp32_ps4/main_ps4.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/src_esp32_r4/main_esp.cpp" root0="FORCE_HIGHLIGHTING" />
+  </component>
+  <component name="MacroExpansionManager">
+    <option name="directoryName" value="cZF1joJQ" />
+  </component>
   <component name="MarkdownSettingsMigration">
-    <option name="stateVersion" value="1" />
+    <option name="stateVersion" value="$GIT_TEST_DEBUG_UNSAFE_DIRECTORIES$" />
   </component>
   <component name="NamedScopeManager">
     <scope name="src" pattern="file[Arduino-R4_UNO_Wall-Z]:src/*" />
@@ -166,20 +285,24 @@
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
     &quot;ASKED_ADD_EXTERNAL_FILES&quot;: &quot;true&quot;,
+    &quot;CidrDebugProfileConversion&quot;: &quot;true&quot;,
     &quot;PlatformIO.PlatformIO.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.RadMigrateCodeStyle&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
     &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
     &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
     &quot;cf.advertisement.text.has.clang-format&quot;: &quot;true&quot;,
     &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
     &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
     &quot;git-widget-placeholder&quot;: &quot;master&quot;,
     &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;A:/Users/mr/Arduino_Projects/Arduino-R4_UNO_Wall-Z&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/workspace/projects/Arduino_Projects/Arduino-R4_UNO_Wall-Z&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -207,6 +330,48 @@
     </key>
   </component>
   <component name="RunManager">
+    <configuration default="true" type="LATEX_RUN_CONFIGURATION" factoryName="LaTeX configuration factory">
+      <option name="auxilPath" value="{projectDir}\auxil" />
+      <option name="latexDistribution" value="MiKTeX" />
+      <steps>
+        <latexCompile id="c76b6fba-f094-4290-ad77-fbc9e97ffbda" />
+        <latexCompile id="c6670bab-b911-4164-98e9-4c326c9a8da7" />
+        <pdfViewer id="9be7ed03-cd42-4314-93e2-549951f01f56">
+          <option name="pdfViewerName" value="SumatraPDF" />
+        </pdfViewer>
+      </steps>
+      <method v="2" />
+    </configuration>
+    <configuration default="true" type="LATEX_RUN_CONFIGURATION" factoryName="LaTeX configuration factory">
+      <option name="auxilPath" value="{projectDir}\auxil" />
+      <option name="latexDistribution" value="MiKTeX" />
+      <steps>
+        <latexCompile id="c76b6fba-f094-4290-ad77-fbc9e97ffbda" />
+        <latexCompile id="c6670bab-b911-4164-98e9-4c326c9a8da7" />
+        <pdfViewer id="9be7ed03-cd42-4314-93e2-549951f01f56">
+          <option name="pdfViewerName" value="SumatraPDF" />
+        </pdfViewer>
+      </steps>
+      <method v="2" />
+    </configuration>
+    <configuration default="true" type="MAKEINDEX_RUN_CONFIGURATION" factoryName="LaTeX configuration factory">
+      <texify-makeindex>
+        <program>MAKEINDEX</program>
+        <main-file />
+        <command-line-args />
+        <work-dir />
+      </texify-makeindex>
+      <method v="2" />
+    </configuration>
+    <configuration default="true" type="MAKEINDEX_RUN_CONFIGURATION" factoryName="LaTeX configuration factory">
+      <texify-makeindex>
+        <program>MAKEINDEX</program>
+        <main-file />
+        <command-line-args />
+        <work-dir />
+      </texify-makeindex>
+      <method v="2" />
+    </configuration>
     <configuration default="true" type="BIBTEX_RUN_CONFIGURATION" factoryName="LaTeX configuration factory">
       <texify-bibtex>
         <compiler />
@@ -219,32 +384,21 @@
       </texify-bibtex>
       <method v="2" />
     </configuration>
-    <configuration default="true" type="CLionExternalRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
+    <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
       <method v="2">
-        <option name="CLION.EXTERNAL.BUILD" enabled="true" />
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
     <configuration default="true" type="LATEX_RUN_CONFIGURATION" factoryName="LaTeX configuration factory">
-      <texify>
-        <compiler>PDFLATEX</compiler>
-        <compiler-path />
-        <pdf-viewer>SumatraPDF</pdf-viewer>
-        <require-focus>true</require-focus>
-        <viewer-command />
-        <compiler-arguments />
-        <envs />
-        <expand-macros-in-environment-variables>false</expand-macros-in-environment-variables>
-        <before-run-command />
-        <main-file />
-        <output-path>{projectDir}/out</output-path>
-        <auxil-path>{projectDir}/auxil</auxil-path>
-        <compile-twice>false</compile-twice>
-        <output-format>PDF</output-format>
-        <latex-distribution>MIKTEX</latex-distribution>
-        <has-been-run>false</has-been-run>
-        <bib-run-config>[]</bib-run-config>
-        <makeindex-run-config>[]</makeindex-run-config>
-      </texify>
+      <option name="auxilPath" value="{projectDir}\auxil" />
+      <option name="latexDistribution" value="MiKTeX" />
+      <steps>
+        <latexCompile id="c76b6fba-f094-4290-ad77-fbc9e97ffbda" />
+        <latexCompile id="c6670bab-b911-4164-98e9-4c326c9a8da7" />
+        <pdfViewer id="9be7ed03-cd42-4314-93e2-549951f01f56">
+          <option name="pdfViewerName" value="SumatraPDF" />
+        </pdfViewer>
+      </steps>
       <method v="2" />
     </configuration>
     <configuration default="true" type="MAKEINDEX_RUN_CONFIGURATION" factoryName="LaTeX configuration factory">
@@ -313,7 +467,17 @@
     <configuration name="PlatformIO" type="platformio" factoryName="PlatformIO Debug" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="Arduino-R4_UNO_Wall-Z" TARGET_NAME="PlatformIO" CONFIG_NAME="PlatformIO">
       <method v="2" />
     </configuration>
+    <configuration name="PlatformIO" type="platformio" factoryName="PlatformIO Debug" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="Arduino-R4_UNO_Wall-Z" TARGET_NAME="PlatformIO" CONFIG_NAME="PlatformIO">
+      <method v="2" />
+    </configuration>
+    <configuration name="PlatformIO" type="platformio" factoryName="PlatformIO Debug" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="Arduino-R4_UNO_Wall-Z" TARGET_NAME="PlatformIO" CONFIG_NAME="PlatformIO">
+      <method v="2" />
+    </configuration>
   </component>
+  <component name="SelectedDebugProfileService">{
+  &quot;profileIdByStamp&quot;: [],
+  &quot;modificationCount&quot;: 1
+}</component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
@@ -493,7 +657,16 @@
       <workItem from="1746465631872" duration="780000" />
       <workItem from="1754765134964" duration="2373000" />
       <workItem from="1754925835250" duration="761000" />
-      <workItem from="1754978520219" duration="2000" />
+      <workItem from="1754978520219" duration="87000" />
+      <workItem from="1755310319050" duration="167000" />
+      <workItem from="1755310619163" duration="385000" />
+      <workItem from="1755364533571" duration="1298000" />
+      <workItem from="1765437918427" duration="900000" />
+      <workItem from="1786723471656" duration="4419000" />
+      <workItem from="1787079343995" duration="3180000" />
+      <workItem from="1787090886945" duration="21000" />
+      <workItem from="1787678729412" duration="5113000" />
+      <workItem from="1787714405651" duration="15000" />
     </task>
     <task id="LOCAL-00001" summary="ps4?">
       <option name="closed" value="true" />
@@ -831,7 +1004,15 @@
       <option name="project" value="LOCAL" />
       <updated>1729724144434</updated>
     </task>
-    <option name="localTasksCounter" value="43" />
+    <task id="LOCAL-00043" summary="Refactor sensor initialization and logging; update configuration files">
+      <option name="closed" value="true" />
+      <created>1754978547482</created>
+      <option name="number" value="00043" />
+      <option name="presentableId" value="LOCAL-00043" />
+      <option name="project" value="LOCAL" />
+      <updated>1754978547482</updated>
+    </task>
+    <option name="localTasksCounter" value="44" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -863,7 +1044,6 @@
   <component name="VcsManagerConfiguration">
     <option name="CHECK_NEW_TODO" value="false" />
     <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
-    <MESSAGE value="ifdef  to if" />
     <MESSAGE value="SICK ps4 working" />
     <MESSAGE value="Added Cam to project too" />
     <MESSAGE value="Added better joystick code" />
@@ -888,10 +1068,19 @@
     <MESSAGE value="fixed main&#10;changed location of defined pins" />
     <MESSAGE value="SPI added&#10;Added SD card functions&#10;Added Round screen&#10;removed PS4 R3 button" />
     <MESSAGE value="just saving" />
-    <option name="LAST_COMMIT_MESSAGE" value="just saving" />
+    <MESSAGE value="Refactor sensor initialization and logging; update configuration files" />
+    <option name="LAST_COMMIT_MESSAGE" value="Refactor sensor initialization and logging; update configuration files" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
     <select />
+  </component>
+  <component name="github-copilot-workspace">
+    <instructionFileLocations>
+      <option value=".github/instructions" />
+    </instructionFileLocations>
+    <promptFileLocations>
+      <option value=".github/prompts" />
+    </promptFileLocations>
   </component>
 </project>

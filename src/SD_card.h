@@ -15,6 +15,11 @@ public:
 	static void configLoadSD();
 
 	static void configSaveSD();
+
+	static bool fileExists(const char* path);
+	static bool openDataFile(const char* path, uint8_t mode);
+	static void closeDataFile();
+	static void printLine(const char* line);
 };
 
 

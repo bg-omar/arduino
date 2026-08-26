@@ -11,6 +11,7 @@
 
 #include "pwm_board.h"
 #include "logger.h"
+#include "compass_heading.h"
 
 
 #include <Arduino.h>
@@ -23,10 +24,10 @@ float DECLINATION_ANGLE = 0.035;
 void compass::compassSetup() {
 	compass::mag = new Adafruit_HMC5883_Unified(12345);
 	if (!compass::mag->begin()) {
-		logger::logln("HMC5883 Compass not found");
+		logger::logln("HMC5883 fail");
 		delay(500);
 	} else {
-		logger::logln("Compass Found!");
+		logger::logln("Compass ok");
 		main::Found_Compass = true;
 		compass::displaySensorDetails();
 		delay(500);
@@ -43,64 +44,49 @@ void compass::showCompass(){
 
     double headingDegrees = readCompass();
 	logger::log("Compass ");
-    char buffer[20]; // Assuming a buffer size of 20 is sufficient
-
-    // Convert double to char*
+    char buffer[20];
     snprintf(buffer, sizeof(buffer), "%f", headingDegrees);
 
 	logger::log(buffer);
-    if (headingDegrees >= 0 && headingDegrees < 45){
+	const CompassCardinal card = cardinalFromDegrees(static_cast<float>(headingDegrees));
+	if (card == CompassCardinal::N) {
         Pesto::matrix_display(north);
         pwm_board::rightLedStrip(0,244,0);
         pwm_board::leftLedStrip(0,244,0);
 		logger::log("  North  ");
-    }
-    if (headingDegrees >= 45 && headingDegrees < 135){
+    } else if (card == CompassCardinal::E) {
         Pesto::matrix_display(east);
         pwm_board::rightLedStrip(244,0,0);
         pwm_board::leftLedStrip(0,244,0);
 		logger::log("  East  ");
-    }
-    if (headingDegrees >= 135 && headingDegrees < 225){
+    } else if (card == CompassCardinal::S) {
         Pesto::matrix_display(south);
         pwm_board::rightLedStrip(244,0,0);
         pwm_board::leftLedStrip(244,0,0);
 		logger::log("  South   ");
-    }
-    if (headingDegrees >= 225 && headingDegrees < 315){
+    } else {
         Pesto::matrix_display(west);
         pwm_board::rightLedStrip(0,244,0);
         pwm_board::leftLedStrip(244,0,0);
 		logger::log("  West  ");
     }
-    if (headingDegrees >= 315 && headingDegrees < 360){
-        Pesto::matrix_display(north);
-        pwm_board::rightLedStrip(0,244,0);
-        pwm_board::leftLedStrip(0,244,0);
-		logger::log("  North ");
-    }
 }
 
 double compass::readCompass(){
-    sensors_event_t event; /// Get a new sensor event */
+	if (mag == nullptr) {
+		return 0.0;
+	}
+    sensors_event_t event;
     mag->getEvent(&event);
 
-	/* Display the results (magnetic vector values are in micro-Tesla (uT)) */
 	logger::log("X: "); logger::logFloat(((event.magnetic.x))); logger::log("  ");
 	logger::log("Y: "); logger::logFloat(((event.magnetic.y))); logger::log("  ");
 	logger::log("Z: "); logger::logFloat(((event.magnetic.z))); logger::log("  ");logger::logln("uT");
 
-	double heading = atan2(event.magnetic.y, event.magnetic.x) + DECLINATION_ANGLE;
-
-    if(heading < 0) {
-        heading += 2 * PI;
-    }
-    if(heading > 2*PI) {
-        heading -= 2 * PI;
-    }
-    double headingDegrees = (heading * 180/M_PI) - 90;
+	const double headingDegrees = compassHeadingDegrees(
+		event.magnetic.x, event.magnetic.z, DECLINATION_ANGLE);
 	logger::log("Heading (degrees): "); logger::logFloatln(((headingDegrees)));
-    return (headingDegrees < 0) ? 360 + headingDegrees : headingDegrees;
+    return headingDegrees;
 }
 
 void compass::displaySensorDetails(){

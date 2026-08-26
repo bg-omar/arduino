@@ -4,15 +4,20 @@
 
 #include "menu.h"
 #include "main_ra.h"
+#include "sense_react.h"
+#include "avoid_objects.h"
+
 #include "logger.h"
 #include "SD_card.h"
 #include "displayAdafruit.h"
+#include "menu_draft.h"
+#include "oled_mode.h"
+#include "iot_iconset_16x16.h"
 
+const int NUM_ITEMS = 27;
+const int MAX_ITEM_LENGTH = 20;
 
-const int NUM_ITEMS = 28; // number of items in the list and also the number of screenshots and screenshots with QR codes (other screens)
-const int MAX_ITEM_LENGTH = 20; // maximum characters for the item name
-
-char menu_items [NUM_ITEMS] [MAX_ITEM_LENGTH] = {  // array with item names
+char menu_items [NUM_ITEMS] [MAX_ITEM_LENGTH] = {
 		{ "use_adafruit" },
 		{ "use_u8g2" },
 		{ "small" },
@@ -26,21 +31,73 @@ char menu_items [NUM_ITEMS] [MAX_ITEM_LENGTH] = {  // array with item names
 		{ "use_compass" },
 		{ "use_barometer" },
 		{ "use_distance" },
-		{ "use_irremote" },
 		{ "use_i2c_scanner" },
 		{ "use_pwm_board" },
 		{ "use_dot" },
-		{ "use_mic" },
+		{ "use_audio" },
 		{ "use_switch" },
 		{ "use_analog" },
+		{ "use_light" },
 		{ "use_robot" },
 		{ "use_timers" },
 		{ "use_matrix" },
 		{ "use_matrix_preview" },
 		{ "read_esp32" },
 		{ "use_lcd" },
-		{ "use_hm_10_ble" }
+		{ "use_oled_sensors" }
 };
+
+struct MenuFlagEntry {
+	const char* label;
+	bool* flag;
+};
+
+static MenuFlagEntry menuFlags[NUM_ITEMS] = {
+		{ "use_adafruit: ", &main::use_adafruit },
+		{ "use_u8g2: ", &main::use_u8g2 },
+		{ "small: ", &main::small },
+		{ "display_demo: ", &main::display_demo },
+		{ "use_round: ", &main::use_round },
+		{ "use_menu: ", &main::use_menu },
+		{ "log_debug: ", &main::log_debug },
+		{ "use_ps4: ", &main::use_ps4 },
+		{ "use_sd_card: ", &main::use_sd_card },
+		{ "use_gyro: ", &main::use_gyro },
+		{ "use_compass: ", &main::use_compass },
+		{ "use_barometer: ", &main::use_barometer },
+		{ "use_distance: ", &main::use_distance },
+		{ "use_i2c_scanner: ", &main::use_i2c_scanner },
+		{ "use_pwm_board: ", &main::use_pwm_board },
+		{ "use_dot: ", &main::use_dot },
+		{ "use_audio: ", &main::use_audio },
+		{ "use_switch: ", &main::use_switch },
+		{ "use_analog: ", &main::use_analog },
+		{ "use_light: ", &main::use_light },
+		{ "use_robot: ", &main::use_robot },
+		{ "use_timers: ", &main::use_timers },
+		{ "use_matrix: ", &main::use_matrix },
+		{ "use_matrix_preview: ", &main::use_matrix_preview },
+		{ "read_esp32: ", &main::read_esp32 },
+		{ "use_lcd: ", &main::use_lcd },
+		{ "use_oled_sensors: ", &main::use_oled_sensors },
+};
+
+static bool sMenuDraftBackup[NUM_ITEMS];
+static OledMode sModeBeforeMenu = OledMode::Log;
+static bool sMenuSessionOpen = false;
+
+static bool* menuFlagPtrs[NUM_ITEMS];
+
+static void initMenuFlagPtrs() {
+	static bool ready = false;
+	if (ready) {
+		return;
+	}
+	for (int i = 0; i < NUM_ITEMS; ++i) {
+		menuFlagPtrs[i] = menuFlags[i].flag;
+	}
+	ready = true;
+}
 
 
 // note - when changing the order of items above, make sure the other arrays referencing bitmaps
@@ -56,314 +113,6 @@ int current_screen = 0;   // 0 = menu, 1 = screenshot, 2 = qr
 
 int demo_mode_state = 0; // demo mode state = which screen and menu item to display
 int demo_mode_delay = 0; // demo mode delay = used to slow down the screen switching
-
-
-
-// 'icon_3dcube', 16x16px
-constexpr static const unsigned char bitmap_icon_3dcube [] PROGMEM = {
-		0x00, 0x00, 0x80, 0x01, 0xE0, 0x06, 0x98, 0x18, 0x86, 0x60, 0x8A, 0x50,
-		0xA2, 0x45, 0x82, 0x40, 0xA2, 0x44, 0x82, 0x40, 0xA2, 0x45, 0x8A, 0x50,
-		0x86, 0x60, 0x98, 0x18, 0xE0, 0x06, 0x80, 0x01, };
-// 'icon_battery', 16x16px
-constexpr static const unsigned char bitmap_icon_battery [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFC, 0x1F, 0x02, 0x20,
-		0xDA, 0x66, 0xDA, 0x66, 0xDA, 0x66, 0x02, 0x20, 0xFC, 0x1F, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, };
-// 'icon_dashboard', 16x16px
-constexpr static const unsigned char bitmap_icon_dashboard [] PROGMEM = {
-		0xE0, 0x07, 0x18, 0x18, 0x84, 0x24, 0x0A, 0x40, 0x12, 0x50, 0x21, 0x80,
-		0xC1, 0x81, 0x45, 0xA2, 0x41, 0x82, 0x81, 0x81, 0x05, 0xA0, 0x02, 0x40,
-		0xD2, 0x4B, 0xC4, 0x23, 0x18, 0x18, 0xE0, 0x07, };
-// 'icon_fireworks', 16x16px
-constexpr static const unsigned char bitmap_icon_fireworks [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x10, 0x00, 0x29, 0x08, 0x10, 0x08, 0x00, 0x36, 0x00,
-		0x08, 0x08, 0x08, 0x08, 0x00, 0x00, 0x00, 0x63, 0x00, 0x00, 0x00, 0x08,
-		0x20, 0x08, 0x50, 0x00, 0x20, 0x00, 0x00, 0x00, };
-// 'icon_gps_speed', 16x16px
-constexpr static const unsigned char bitmap_icon_gps_speed [] PROGMEM = {
-		0x00, 0x00, 0xC0, 0x0F, 0x00, 0x10, 0x80, 0x27, 0x00, 0x48, 0x00, 0x53,
-		0x60, 0x54, 0xE0, 0x54, 0xE0, 0x51, 0xE0, 0x43, 0xE0, 0x03, 0x50, 0x00,
-		0xF8, 0x00, 0x04, 0x01, 0xFE, 0x03, 0x00, 0x00, };
-// 'icon_knob_over_oled', 16x16px
-constexpr static const unsigned char bitmap_icon_knob_over_oled [] PROGMEM = {
-		0x00, 0x00, 0xF8, 0x0F, 0xC8, 0x0A, 0xD8, 0x0D, 0x88, 0x0A, 0xF8, 0x0F,
-		0xC0, 0x01, 0x80, 0x00, 0x00, 0x00, 0x90, 0x04, 0x92, 0x24, 0x04, 0x10,
-		0x00, 0x80, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, };
-// 'icon_parksensor', 16x16px
-constexpr static const unsigned char bitmap_icon_parksensor [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3F, 0x00, 0x44, 0x00, 0xA4, 0x00,
-		0x9F, 0x00, 0x00, 0x81, 0x30, 0xA1, 0x48, 0xA9, 0x4B, 0xA9, 0x30, 0xA0,
-		0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, };
-// 'icon_turbo', 16x16px
-constexpr static const unsigned char bitmap_icon_turbo [] PROGMEM = {
-		0x00, 0x70, 0xE0, 0x8F, 0x18, 0x80, 0x04, 0x80, 0x02, 0x80, 0xC2, 0x8F,
-		0x21, 0x72, 0x51, 0x05, 0x91, 0x44, 0x51, 0x45, 0x21, 0x42, 0xC2, 0x21,
-		0x02, 0x20, 0x04, 0x10, 0x18, 0x0C, 0xE0, 0x03, };
-
-// 'sentiment_very_dissatisfied', 16x16px
-constexpr static const unsigned char bitmap_icon_sentiment_very_dissatisfied [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xe0, 0x07, 0x10, 0x08, 0x08, 0x10, 0x04, 0x20, 0x64, 0x26, 0x04, 0x20,
-		0x04, 0x20, 0x84, 0x21, 0xe4, 0x27, 0x08, 0x10, 0x10, 0x08, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00
-};
-// 'sentiment_neutral', 16x16px
-constexpr static const unsigned char bitmap_icon_sentiment_neutral [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xe0, 0x07, 0x10, 0x08, 0x08, 0x10, 0x04, 0x20, 0x64, 0x26, 0x04, 0x20,
-		0x04, 0x20, 0xc4, 0x23, 0x04, 0x20, 0x08, 0x10, 0x10, 0x08, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00
-};
-// 'sentiment_dissatisfied', 16x16px
-constexpr static const unsigned char bitmap_icon_sentiment_dissatisfied [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xe0, 0x07, 0x10, 0x08, 0x08, 0x10, 0x04, 0x20, 0x64, 0x26, 0x04, 0x20,
-		0x04, 0x20, 0xc4, 0x23, 0x64, 0x26, 0x08, 0x10, 0x10, 0x08, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00
-};
-// 'mood', 16x16px
-constexpr static const unsigned char bitmap_icon_mood [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xe0, 0x07, 0x10, 0x08, 0x08, 0x10, 0x04, 0x20, 0x64, 0x26, 0x04, 0x20,
-		0x04, 0x20, 0xe4, 0x27, 0xc4, 0x23, 0x08, 0x10, 0x10, 0x08, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00
-};
-// 'sentiment_satisfied', 16x16px
-constexpr static const unsigned char bitmap_icon_sentiment_satisfied [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xe0, 0x07, 0x10, 0x08, 0x08, 0x10, 0x04, 0x20, 0x64, 0x26, 0x04, 0x20,
-		0x04, 0x20, 0x24, 0x24, 0xc4, 0x27, 0x08, 0x10, 0x10, 0x08, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00
-};
-// 'timer', 16x16px
-constexpr static const unsigned char bitmap_icon_timer [] PROGMEM = {
-		0x00, 0x00, 0xc0, 0x03, 0x00, 0x00, 0xc0, 0x03, 0x60, 0x1e, 0x10, 0x18, 0x88, 0x11, 0x88, 0x11,
-		0x8c, 0x31, 0x08, 0x10, 0x08, 0x10, 0x08, 0x10, 0x30, 0x0c, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00
-};
-// 'tune', 16x16px
-constexpr static const unsigned char bitmap_icon_tune [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0xfc, 0x3d, 0x00, 0x04, 0x20, 0x00, 0x38, 0x1f,
-		0x38, 0x1f, 0x20, 0x00, 0x00, 0x01, 0x3c, 0x3f, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'remote_gen', 16x16px
-constexpr static const unsigned char bitmap_icon_remote_gen [] PROGMEM = {
-		0x00, 0x00, 0xf0, 0x0f, 0x10, 0x08, 0x90, 0x09, 0x50, 0x0a, 0xd0, 0x0b, 0x90, 0x09, 0x10, 0x08,
-		0x50, 0x0a, 0x10, 0x08, 0x50, 0x0a, 0x10, 0x08, 0x50, 0x0a, 0x10, 0x08, 0xf0, 0x0f, 0x00, 0x00
-};
-// 'stadia_controller', 16x16px
-constexpr static const unsigned char bitmap_icon_stadia_controller [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x0f, 0x18, 0x18, 0x08, 0x14, 0x6c, 0x38, 0x04, 0x20,
-		0x04, 0x20, 0xc4, 0x23, 0x24, 0x64, 0x34, 0x2c, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'linked_camera', 16x16px
-constexpr static const unsigned char bitmap_icon_linked_camera [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x18, 0xc0, 0x21, 0xe0, 0x29, 0x3c, 0x10, 0x04, 0x00, 0x84, 0x21, 0x44, 0x22,
-		0x24, 0x24, 0x64, 0x26, 0xc4, 0x23, 0x04, 0x20, 0xfc, 0x3f, 0xf8, 0x1f, 0x00, 0x00, 0x00, 0x00
-};
-// '360', 16x16px
-constexpr static const unsigned char bitmap_icon_360 [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x0f, 0x1c, 0x38, 0x04, 0x20,
-		0x44, 0x20, 0xdc, 0x38, 0xf0, 0x08, 0xc0, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'speaker_phone', 16x16px
-constexpr static const unsigned char bitmap_icon_speaker_phone [] PROGMEM = {
-		0x00, 0x00, 0xe0, 0x07, 0x30, 0x0c, 0x80, 0x01, 0x60, 0x06, 0x00, 0x00, 0xc0, 0x03, 0xe0, 0x07,
-		0x20, 0x04, 0x20, 0x04, 0x20, 0x04, 0x20, 0x04, 0x20, 0x04, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00
-};
-// 'piano', 16x16px
-constexpr static const unsigned char bitmap_icon_piano [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xf8, 0x1f, 0xfc, 0x3f, 0x6c, 0x36, 0x6c, 0x36, 0x6c, 0x36, 0x6c, 0x36,
-		0x6c, 0x36, 0x6c, 0x36, 0x0c, 0x30, 0x0c, 0x30, 0xfc, 0x3f, 0xf8, 0x1f, 0x00, 0x00, 0x00, 0x00
-};
-// 'health_metrics', 16x16px
-constexpr static const unsigned char bitmap_icon_health_metrics [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xe0, 0x07, 0x20, 0x04, 0x20, 0x04, 0x3c, 0x3c, 0x04, 0x23, 0x3c, 0x3f,
-		0xfc, 0x3c, 0xc4, 0x20, 0x3c, 0x3c, 0x20, 0x04, 0x20, 0x04, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00
-};
-// 'piano_off', 16x16px
-constexpr static const unsigned char bitmap_icon_piano_off [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xe0, 0x1f, 0xe4, 0x3f, 0x4c, 0x36, 0x1c, 0x36, 0x2c, 0x36, 0x6c, 0x36,
-		0xec, 0x34, 0x6c, 0x31, 0x0c, 0x22, 0x0c, 0x04, 0xfc, 0x0f, 0xf8, 0x1f, 0x00, 0x00, 0x00, 0x00
-};
-// 'developer_board_off', 16x16px
-constexpr static const unsigned char bitmap_icon_developer_board_off [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xe2, 0x0f, 0xc4, 0x1f, 0x0c, 0x10, 0x14, 0x33, 0x34, 0x10, 0x74, 0x32,
-		0x84, 0x30, 0x74, 0x11, 0x74, 0x33, 0x04, 0x04, 0xfc, 0x0f, 0xf8, 0x1f, 0x00, 0x20, 0x00, 0x00
-};
-// 'monitor', 16x16px
-constexpr static const unsigned char bitmap_icon_monitor [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xf8, 0x1f, 0xfc, 0x3f, 0x04, 0x20, 0x04, 0x20, 0x04, 0x20, 0x04, 0x20,
-		0x04, 0x20, 0x04, 0x20, 0x04, 0x20, 0xfc, 0x3f, 0xe0, 0x07, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00
-};
-// 'desktop_access_disabled', 16x16px
-constexpr static const unsigned char bitmap_icon_desktop_access_disabled [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xe2, 0x1f, 0xc4, 0x3f, 0x0c, 0x20, 0x14, 0x20, 0x24, 0x20, 0x44, 0x20,
-		0x84, 0x20, 0x04, 0x21, 0x04, 0x22, 0xfc, 0x27, 0x80, 0x09, 0xc0, 0x13, 0x00, 0x20, 0x00, 0x00
-};
-// 'restart_alt', 16x16px
-constexpr static const unsigned char bitmap_icon_restart_alt [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0xc0, 0x03, 0x80, 0x06, 0x10, 0x08, 0x18, 0x18,
-		0x08, 0x10, 0x08, 0x10, 0x10, 0x08, 0x30, 0x0c, 0x60, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'settings', 16x16px
-constexpr static const unsigned char bitmap_icon_settings [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0xc0, 0x03, 0x78, 0x1e, 0x0c, 0x30, 0xc8, 0x13, 0xc8, 0x13,
-		0xc8, 0x13, 0xc8, 0x13, 0x0c, 0x30, 0x78, 0x1e, 0xc0, 0x03, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00
-};
-// 'no_sim', 16x16px
-constexpr static const unsigned char bitmap_icon_no_sim [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xc2, 0x1f, 0x24, 0x10, 0x08, 0x10, 0x18, 0x10, 0x38, 0x10, 0x48, 0x10,
-		0x88, 0x10, 0x08, 0x11, 0x08, 0x02, 0x08, 0x04, 0x08, 0x08, 0xf8, 0x1f, 0x00, 0x20, 0x00, 0x00
-};
-// 'storage', 16x16px
-constexpr static const unsigned char bitmap_icon_storage [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xfc, 0x3f, 0xf4, 0x3f, 0xfc, 0x3f, 0x00, 0x00, 0xf4, 0x3f,
-		0xf4, 0x3f, 0x00, 0x00, 0xfc, 0x3f, 0xf4, 0x3f, 0xfc, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'sim_card_download', 16x16px
-constexpr static const unsigned char bitmap_icon_sim_card_download [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xc0, 0x1f, 0x20, 0x10, 0x10, 0x10, 0x08, 0x10, 0x08, 0x10, 0x88, 0x11,
-		0xc8, 0x13, 0xc8, 0x13, 0x88, 0x11, 0x08, 0x10, 0x08, 0x10, 0xf8, 0x1f, 0x00, 0x00, 0x00, 0x00
-};
-// 'sd_card', 16x16px
-constexpr static const unsigned char bitmap_icon_sd_card [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xc0, 0x1f, 0x20, 0x10, 0x10, 0x10, 0x48, 0x1d, 0x48, 0x1d, 0x08, 0x10,
-		0x08, 0x10, 0x08, 0x10, 0x08, 0x10, 0x08, 0x10, 0x08, 0x10, 0xf8, 0x1f, 0x00, 0x00, 0x00, 0x00
-};
-// 'sd_card_alert', 16x16px
-constexpr static const unsigned char bitmap_icon_sd_card_alert [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xc0, 0x1f, 0x20, 0x10, 0x10, 0x10, 0x08, 0x10, 0x88, 0x11, 0x88, 0x11,
-		0x08, 0x10, 0x08, 0x10, 0x08, 0x10, 0x08, 0x10, 0x08, 0x10, 0xf8, 0x1f, 0x00, 0x00, 0x00, 0x00
-};
-// 'joystick', 16x16px
-constexpr static const unsigned char bitmap_icon_joystick [] PROGMEM = {
-		0x00, 0x00, 0x80, 0x01, 0x40, 0x02, 0x40, 0x02, 0x80, 0x01, 0x80, 0x01, 0xc0, 0x07, 0xb0, 0x0d,
-		0x98, 0x19, 0x3c, 0x3c, 0x6c, 0x36, 0x98, 0x19, 0x70, 0x0e, 0xc0, 0x03, 0x00, 0x00, 0x00, 0x00
-};
-// 'volume_off (1)', 16x16px
-constexpr static const unsigned char bitmap_icon_volume_off__1_ [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x06, 0x88, 0x08, 0x90, 0x10, 0x38, 0x12, 0x5c, 0x36,
-		0x9c, 0x10, 0xf8, 0x11, 0xc0, 0x12, 0x80, 0x04, 0x00, 0x0e, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00
-};
-// 'volume_down', 16x16px
-constexpr static const unsigned char bitmap_icon_volume_down [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x80, 0x03, 0xf0, 0x0b, 0x70, 0x0b,
-		0x70, 0x0b, 0xf0, 0x0b, 0x80, 0x03, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'volume_off', 16x16px
-constexpr static const unsigned char bitmap_icon_volume_off [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x06, 0x88, 0x08, 0x90, 0x10, 0x38, 0x12, 0x5c, 0x36,
-		0x9c, 0x10, 0xf8, 0x11, 0xc0, 0x12, 0x80, 0x04, 0x00, 0x0e, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00
-};
-// 'volume_up', 16x16px
-constexpr static const unsigned char bitmap_icon_volume_up [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x80, 0x08, 0xc0, 0x10, 0xf8, 0x12, 0x9c, 0x36,
-		0x9c, 0x36, 0xf8, 0x12, 0xc0, 0x10, 0x80, 0x08, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'developer_board', 16x16px
-constexpr static const unsigned char bitmap_icon_developer_board [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xf8, 0x0f, 0xfc, 0x1f, 0x04, 0x10, 0x74, 0x33, 0x74, 0x10, 0x74, 0x33,
-		0x04, 0x33, 0x74, 0x13, 0x74, 0x33, 0x04, 0x10, 0xfc, 0x1f, 0xf8, 0x0f, 0x00, 0x00, 0x00, 0x00
-};
-// 'memory', 16x16px
-constexpr static const unsigned char bitmap_icon_memory [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x40, 0x02, 0x40, 0x02, 0xf0, 0x0f, 0x10, 0x08, 0x9c, 0x39, 0xd0, 0x0b,
-		0xd0, 0x0b, 0x9c, 0x39, 0x10, 0x08, 0xf0, 0x0f, 0x40, 0x02, 0x40, 0x02, 0x00, 0x00, 0x00, 0x00
-};
-// 'mic', 16x16px
-constexpr static const unsigned char bitmap_icon_mic [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xc0, 0x03, 0x40, 0x02, 0x40, 0x02, 0x40, 0x02, 0x40, 0x02, 0x40, 0x02,
-		0xd0, 0x0b, 0x10, 0x08, 0x60, 0x06, 0xc0, 0x03, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'stylus_laser_pointer', 16x16px
-constexpr static const unsigned char bitmap_icon_stylus_laser_pointer [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x18, 0x00, 0x0e, 0x80, 0x03, 0xc0, 0x01, 0x70, 0x00, 0xf8, 0x0f, 0xf0, 0x1f,
-		0x00, 0x0f, 0x80, 0x07, 0x00, 0x02, 0xf0, 0x00, 0xf0, 0x00, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'wb', 16x16px
-constexpr static const unsigned char bitmap_icon_wb [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0x08, 0x10, 0x08, 0x10, 0x00, 0x00, 0xf8, 0x1f, 0x18, 0x18,
-		0x18, 0x18, 0xf8, 0x1f, 0x00, 0x00, 0x08, 0x10, 0x08, 0x10, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00
-};
-// 'explore_off', 16x16px
-constexpr static const unsigned char bitmap_icon_explore_off [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xe0, 0x07, 0x04, 0x0c, 0x08, 0x10, 0x1c, 0x26, 0x24, 0x27, 0x44, 0x22,
-		0xc4, 0x20, 0xe4, 0x21, 0x24, 0x22, 0x08, 0x04, 0x30, 0x0c, 0xe0, 0x17, 0x00, 0x00, 0x00, 0x00
-};
-// 'explore', 16x16px
-constexpr static const unsigned char bitmap_icon_explore [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0xe0, 0x07, 0x30, 0x0c, 0x08, 0x10, 0x04, 0x36, 0x84, 0x23, 0x44, 0x22,
-		0x44, 0x22, 0xe4, 0x21, 0x24, 0x20, 0x08, 0x10, 0x30, 0x0c, 0xe0, 0x07, 0x00, 0x00, 0x00, 0x00
-};
-// 'check_box', 16x16px
-constexpr static const unsigned char bitmap_icon_check_box [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x1f, 0x08, 0x10, 0x08, 0x10, 0x08, 0x16, 0x08, 0x13,
-		0xe8, 0x11, 0xc8, 0x10, 0x08, 0x10, 0x08, 0x10, 0xf8, 0x1f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'check_box_outline_blank', 16x16px
-constexpr static const unsigned char bitmap_icon_check_box_outline_blank [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x1f, 0x08, 0x10, 0x08, 0x10, 0x08, 0x10, 0x08, 0x10,
-		0x08, 0x10, 0x08, 0x10, 0x08, 0x10, 0x08, 0x10, 0xf8, 0x1f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'toggle_off', 16x16px
-constexpr static const unsigned char bitmap_icon_toggle_off [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x1f, 0x0c, 0x30, 0x36, 0x60, 0x7a, 0x40,
-		0x7a, 0x40, 0x36, 0x60, 0x0c, 0x30, 0xf8, 0x1f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'toggle_on', 16x16px
-constexpr static const unsigned char bitmap_icon_toggle_on [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x1f, 0x0c, 0x30, 0x06, 0x6c, 0x02, 0x5e,
-		0x02, 0x5e, 0x06, 0x6c, 0x0c, 0x30, 0xf8, 0x1f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-// 'bluetooth_connected', 16x16px
-constexpr static const unsigned char bitmap_icon_bluetooth_connected [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0x80, 0x03, 0x90, 0x06, 0xa0, 0x04, 0xc0, 0x03, 0x88, 0x11,
-		0x88, 0x11, 0xc0, 0x03, 0xa0, 0x04, 0x90, 0x06, 0x80, 0x03, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00
-};
-// 'bluetooth_disabled', 16x16px
-constexpr static const unsigned char bitmap_icon_bluetooth_disabled [] PROGMEM = {
-		0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0x8c, 0x03, 0x98, 0x06, 0x90, 0x04, 0x20, 0x02, 0x40, 0x00,
-		0x80, 0x00, 0xc0, 0x01, 0xa0, 0x02, 0x90, 0x06, 0x80, 0x0b, 0x80, 0x11, 0x00, 0x00, 0x00, 0x00
-};
-
-// Array of all bitmaps for convenience. (Total bytes used to store images in PROGMEM = 2064)
-const int bitmap_icon_allArray_LEN = 43;
-constexpr static const unsigned char* bitmap_iconS[43] = {
-		bitmap_icon_360,
-		bitmap_icon_bluetooth_connected,
-		bitmap_icon_bluetooth_disabled,
-		bitmap_icon_check_box,
-		bitmap_icon_check_box_outline_blank,
-		bitmap_icon_desktop_access_disabled,
-		bitmap_icon_developer_board,
-		bitmap_icon_developer_board_off,
-		bitmap_icon_explore,
-		bitmap_icon_explore_off,
-		bitmap_icon_health_metrics,
-		bitmap_icon_joystick,
-		bitmap_icon_linked_camera,
-		bitmap_icon_memory,
-		bitmap_icon_mic,
-		bitmap_icon_monitor,
-		bitmap_icon_mood,
-		bitmap_icon_no_sim,
-		bitmap_icon_piano,
-		bitmap_icon_piano_off,
-		bitmap_icon_remote_gen,
-		bitmap_icon_restart_alt,
-		bitmap_icon_sd_card,
-		bitmap_icon_sd_card_alert,
-		bitmap_icon_sentiment_dissatisfied,
-		bitmap_icon_sentiment_neutral,
-		bitmap_icon_sentiment_satisfied,
-		bitmap_icon_sentiment_very_dissatisfied,
-		bitmap_icon_settings,
-		bitmap_icon_sim_card_download,
-		bitmap_icon_speaker_phone,
-		bitmap_icon_stadia_controller,
-		bitmap_icon_storage,
-		bitmap_icon_stylus_laser_pointer,
-		bitmap_icon_timer,
-		bitmap_icon_toggle_off,
-		bitmap_icon_toggle_on,
-		bitmap_icon_tune,
-		bitmap_icon_volume_down,
-		bitmap_icon_volume_off,
-		bitmap_icon_volume_off__1_,
-		bitmap_icon_volume_up,
-		bitmap_icon_wb
-};
-
 
 // 'scrollbar_background', 8x64px
 constexpr static const unsigned char bitmap_scrollbar_background [] PROGMEM = {
@@ -407,122 +156,42 @@ constexpr static const unsigned char bitmap_item_sel_outline [] PROGMEM = {
 		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x03,
 };
 
-constexpr static const unsigned char person_icon16x16[] =
-		{
-				0b00000111, 0b11100000, //      ######
-				0b00001111, 0b11110000, //     ########
-				0b00001111, 0b11110000, //     ########
-				0b00011111, 0b11111000, //    ##########
-				0b00011111, 0b11111000, //    ##########
-				0b00011111, 0b11111000, //    ##########
-				0b00011111, 0b11111000, //    ##########
-				0b00001111, 0b11110000, //     ########
-				0b00001111, 0b11110000, //     ########
-				0b00000111, 0b11100000, //      ######
-				0b00000111, 0b11100000, //      ######
-				0b00111111, 0b11111100, //   ############
-				0b01111111, 0b11111110, //  ##############
-				0b11111111, 0b11111111, // ################
-				0b11111111, 0b11111111, // ################
-				0b11111111, 0b11111111, // ################
-		};
 
-constexpr static const unsigned char bullet_icon16x16[] =
-		{
-				0b00000000, 0b00000000, //
-				0b00000000, 0b00000000, //
-				0b00000000, 0b00000000, //
-				0b00000000, 0b00000000, //
-				0b00000011, 0b10000000, //       ###
-				0b00001111, 0b11100000, //     #######
-				0b00001111, 0b11100000, //     #######
-				0b00011111, 0b11110000, //    #########
-				0b00011111, 0b11110000, //    #########
-				0b00011111, 0b11110000, //    #########
-				0b00001111, 0b11100000, //     #######
-				0b00001111, 0b11100000, //     #######
-				0b00000011, 0b10000000, //       ###
-				0b00000000, 0b00000000, //
-				0b00000000, 0b00000000, //
-				0b00000000, 0b00000000, //
-		};
-
-constexpr static const unsigned char cancel_icon16x16[] =
-		{
-				0b00000000, 0b00000000, //
-				0b00000000, 0b00000000, //
-				0b00111000, 0b00001110, //   ###       ###
-				0b00111100, 0b00011110, //   ####     ####
-				0b00111110, 0b00111110, //   #####   #####
-				0b00011111, 0b01111100, //    ##### #####
-				0b00001111, 0b11111000, //     #########
-				0b00000111, 0b11110000, //      #######
-				0b00000011, 0b11100000, //       #####
-				0b00000111, 0b11110000, //      #######
-				0b00001111, 0b11111000, //     #########
-				0b00011111, 0b01111100, //    ##### #####
-				0b00111110, 0b00111110, //   #####   #####
-				0b00111100, 0b00011110, //   ####     ####
-				0b00111000, 0b00001110, //   ###       ###
-				0b00000000, 0b00000000, //
-		};
-
-constexpr static const unsigned char check_icon16x16[] =
-		{
-				0b00000000, 0b00000000, //
-				0b00000000, 0b00000000, //
-				0b00000000, 0b00000000, //
-				0b00000000, 0b00000000, //
-				0b00000000, 0b00000111, //              ###
-				0b00000000, 0b00001111, //             ####
-				0b00000000, 0b00011111, //            #####
-				0b01110000, 0b00111110, //  ###      #####
-				0b01111000, 0b01111100, //  ####    #####
-				0b01111100, 0b11111000, //  #####  #####
-				0b00011111, 0b11110000, //    #########
-				0b00001111, 0b11100000, //     #######
-				0b00000111, 0b11000000, //      #####
-				0b00000011, 0b10000000, //       ###
-				0b00000000, 0b00000000, //
-				0b00000000, 0b00000000, //
-		};
-
-
-// Array of all bitmaps for convenience. (Total bytes used to store images in PROGMEM = 384)
-constexpr static const unsigned char* bitmap_icons[28] = {
-		bitmap_icon_monitor,
-		bitmap_icon_monitor,
-		bitmap_icon_monitor,
-		bitmap_icon_monitor,
-		bitmap_icon_monitor,
-		bitmap_icon_storage,
-		bitmap_icon_check_box_outline_blank,
-		bitmap_icon_joystick,
-		bitmap_icon_sd_card,
-		bitmap_icon_360,
-		bitmap_icon_explore,
-		bitmap_icon_check_box_outline_blank,
-		bitmap_icon_speaker_phone,
-		bitmap_icon_remote_gen,
-		bitmap_icon_health_metrics,
-		bitmap_icon_developer_board,
-		bitmap_icon_wb,
-		bitmap_icon_mic,
-		bitmap_icon_toggle_on,
-		check_icon16x16,
-		person_icon16x16,
-		bitmap_icon_timer,
-		bullet_icon16x16,
-		bullet_icon16x16,
-		bullet_icon16x16,
-		bitmap_icon_wb,
-		bitmap_icon_bluetooth_connected,
+// Menu item icons (IoT 16x16 set) — order matches menu_items / menuFlags.
+static const unsigned char* const bitmap_icons[NUM_ITEMS] = {
+		window_icon16x16,       // use_adafruit
+		window_icon16x16,       // use_u8g2
+		minus_icon16x16,        // small
+		face_icon16x16,         // display_demo
+		bullet_icon16x16,       // use_round
+		tool_icon16x16,         // use_menu
+		warning_icon16x16,      // log_debug
+		bluetooth_icon16x16,    // use_ps4
+		bat2_icon16x16,         // use_sd_card
+		siren_icon16x16,        // use_gyro
+		signal3_icon16x16,      // use_compass
+		temperature_icon16x16,  // use_barometer
+		humidity2_icon16x16,    // use_distance
+		wifi1_icon16x16,        // use_i2c_scanner
+		wallplug_icon16x16,     // use_pwm_board
+		bulb_on_icon16x16,      // use_dot
+		speak_icon16x16,        // use_audio
+		powerbutton_icon16x16,  // use_switch
+		plug_icon16x16,         // use_analog
+		sun_icon16x16,          // use_light
+		person_icon16x16,       // use_robot
+		timer_icon16x16,        // use_timers
+		window_icon16x16,       // use_matrix
+		window_icon16x16,       // use_matrix_preview
+		wifi2_icon16x16,        // read_esp32
+		mobile_icon16x16,       // use_lcd
+		humidity_icon16x16,     // use_oled_sensors
 };
-
 
 
 void menu::loopMenu() {
 	if (main::display_demo) { // when demo mode is active, automatically switch between all the screens and menu items
+		displayAdafruit::setMode(OledMode::Menu);
 		demo_mode_delay++; // increase demo mode delay
 		if (demo_mode_delay > 15) { // after some time, switch to another screen - change this value to make it slower/faster
 			demo_mode_delay = 0;
@@ -532,6 +201,13 @@ void menu::loopMenu() {
 
 		if (demo_mode_state % 3 == 0) {current_screen = 0; item_selected = demo_mode_state/3; } // menu screen
 	} // end demo mode section
+
+	if (displayAdafruit::getMode() != OledMode::Menu) {
+		return;
+	}
+	if (!displayAdafruit::isMenuDirty() && !main::display_demo) {
+		return;
+	}
 
 
 
@@ -544,27 +220,39 @@ void menu::loopMenu() {
 
 
 	displayAdafruit::display.clearDisplay();  // clear buffer for storing display content in RAM
+	displayAdafruit::display.setFont(&TomThumb);
 
 	if (current_screen == 0) { // MENU SCREEN
 
 		// selected item background
 		displayAdafruit::display.drawBitmap(0, 22, bitmap_item_sel_outline, 128, 21, SH110X_WHITE);
 
-		// draw previous item as icon + label
+		// draw previous item as icon + label + ON/OFF
 		displayAdafruit::display.setCursor(25, 15);
-		displayAdafruit::display.println(menu_items[item_sel_previous]);
-		displayAdafruit::display.drawBitmap( 4, 2, bitmap_icons[item_sel_previous], 16, 16, SH110X_WHITE);
+		displayAdafruit::display.print(menu_items[item_sel_previous]);
+		displayAdafruit::display.drawBitmap(4, 2, bitmap_icons[item_sel_previous], 16, 16, SH110X_WHITE);
+		displayAdafruit::display.drawBitmap(
+			108, 2,
+			*menuFlags[item_sel_previous].flag ? check_icon16x16 : cancel_icon16x16,
+			16, 16, SH110X_WHITE);
 
-
-		// draw selected item as icon
+		// draw selected item as icon + label + check/cancel
 		displayAdafruit::display.setCursor(25, 15+20+2);
-		displayAdafruit::display.println(menu_items[item_selected]);
-		displayAdafruit::display.drawBitmap( 4, 24, bitmap_icons[item_selected], 16, 16, SH110X_WHITE);
+		displayAdafruit::display.print(menu_items[item_selected]);
+		displayAdafruit::display.drawBitmap(4, 24, bitmap_icons[item_selected], 16, 16, SH110X_WHITE);
+		displayAdafruit::display.drawBitmap(
+			108, 24,
+			*menuFlags[item_selected].flag ? check_icon16x16 : cancel_icon16x16,
+			16, 16, SH110X_WHITE);
 
-		// draw next item as icon + label
+		// draw next item as icon + label + check/cancel
 		displayAdafruit::display.setCursor(25, 15+20+20+2+2);
-		displayAdafruit::display.println(menu_items[item_sel_next]);
-		displayAdafruit::display.drawBitmap( 4, 46, bitmap_icons[item_sel_next], 16, 16, SH110X_WHITE);
+		displayAdafruit::display.print(menu_items[item_sel_next]);
+		displayAdafruit::display.drawBitmap(4, 46, bitmap_icons[item_sel_next], 16, 16, SH110X_WHITE);
+		displayAdafruit::display.drawBitmap(
+			108, 46,
+			*menuFlags[item_sel_next].flag ? check_icon16x16 : cancel_icon16x16,
+			16, 16, SH110X_WHITE);
 
 		// draw scrollbar background
 		displayAdafruit::display.drawBitmap(128-8, 0, bitmap_scrollbar_background, 8, 64, SH110X_WHITE);
@@ -575,144 +263,141 @@ void menu::loopMenu() {
 	}
 
 	displayAdafruit::display.display(); // send buffer from RAM to display controller
+	if (!main::display_demo) {
+		displayAdafruit::clearMenuDirty();
+	}
 }
 
+static void logFlag(const char* name, bool value) {
+	logger::log(name);
+	logger::logln(value ? "true" : "false");
+}
+
+static void logItem(int item) {
+	logger::log("Item: ");
+	logger::logIntln(item);
+}
 
 void menu::down() {
+	if (!sMenuSessionOpen) {
+		return;
+	}
+	displayAdafruit::markMenuDirty();
 	if (current_screen == 0) {
 		item_selected = item_selected + 1; // select next item
 		if (item_selected >= NUM_ITEMS) { // last item was selected, jump to first menu item
 			item_selected = 0;
 		}
 	}
-	logger::logln("Item: " + item_selected);
+	logItem(item_selected);
 
 }
 
 void menu::up() {
+	if (!sMenuSessionOpen) {
+		return;
+	}
+	displayAdafruit::markMenuDirty();
 	if (current_screen == 0) {
 		item_selected = item_selected - 1; // select previous item
 		if (item_selected < 0) { // if first item was selected, jump to last item
 			item_selected = NUM_ITEMS - 1;
 		}
 	}
-	logger::logln("Item: " + item_selected);
-	delay(250);
+	logItem(item_selected);
 }
 
 void menu::select() {
-	switch (item_selected) {
-		case 0:
-			main::use_adafruit = !main::use_adafruit;
-			logger::logln("use_adafruit: " + char(main::use_adafruit));
-			break;
-		case 1:
-			main::use_u8g2 = !main::use_u8g2;
-			logger::logln("use_u8g2: " + char(main::use_u8g2));
-			break;
-		case 2:
-			main::small = !main::small;
-			logger::logln("small: " + char(main::small));
-			break;
-		case 3:
-			main::display_demo = !main::display_demo;
-			logger::logln("display_demo: " + char(main::display_demo));
-			break;
-		case 4:
-			main::use_round = !main::use_round;
-			logger::logln("use_round: " + char(main::use_round));
-			break;
-		case 5:
-			main::use_menu = !main::use_menu;
-			logger::logln("use_menu: " + char(main::use_menu));
-			break;
-		case 6:
-			main::log_debug = !main::log_debug;
-			logger::logln("log_debug: " + char(main::log_debug));
-			break;
-		case 7:
-			main::use_ps4 = !main::use_ps4;
-			logger::logln("use_ps4: " + char(main::use_ps4));
-			break;
-		case 8:
-			main::use_sd_card = !main::use_sd_card;
-			logger::logln("use_sd_card: " + char(main::use_sd_card));
-			break;
-		case 9:
-			main::use_gyro = !main::use_gyro;
-			logger::logln("use_gyro: " + char(main::use_gyro));
-			break;
-		case 10:
-			main::use_compass = !main::use_compass;
-			logger::logln("use_compass: " + char(main::use_compass));
-			break;
-		case 11:
-			main::use_barometer = !main::use_barometer;
-			logger::logln("use_barometer: " + char(main::use_barometer));
-			break;
-		case 12:
-			main::use_distance = !main::use_distance;
-			logger::logln("use_distance: " + char(main::use_distance));
-			break;
-		case 13:
-			main::use_irremote = !main::use_irremote;
-			logger::logln("use_irremote: " + char(main::use_irremote));
-			break;
-		case 14:
-			main::use_i2c_scanner = !main::use_i2c_scanner;
-			logger::logln("use_i2c_scanner: " + char(main::use_i2c_scanner));
-			break;
-		case 15:
-			main::use_pwm_board = !main::use_pwm_board;
-			logger::logln("use_pwm_board: " + char(main::use_pwm_board));
-			break;
-		case 16:
-			main::use_dot = !main::use_dot;
-			logger::logln("use_dot: " + char(main::use_dot));
-			break;
-		case 17:
-			main::use_mic = !main::use_mic;
-			logger::logln("use_mic: " + char(main::use_mic));
-			break;
-		case 18:
-			main::use_switch = !main::use_switch;
-			logger::logln("use_switch: " + char(main::use_switch));
-			break;
-		case 19:
-			main::use_analog = !main::use_analog;
-			logger::logln("use_analog: " + char(main::use_analog));
-			break;
-		case 20:
-			main::use_robot = !main::use_robot;
-			logger::logln("use_robot: " + char(main::use_robot));
-			break;
-		case 21:
-			main::use_timers = !main::use_timers;
-			logger::logln("use_timers: " + char(main::use_timers));
-			break;
-		case 22:
-			main::use_matrix = !main::use_matrix;
-			logger::logln("use_matrix: " + char(main::use_matrix));
-			break;
-		case 23:
-			main::use_matrix_preview = !main::use_matrix_preview;
-			logger::logln("use_matrix_preview: " + char(main::use_matrix_preview));
-			break;
-		case 24:
-			main::read_esp32 = !main::read_esp32;
-			logger::logln("read_esp32: " + char(main::read_esp32));
-			break;
-		case 25:
-			main::use_lcd = !main::use_lcd;
-			logger::logln("use_lcd: " + char(main::use_lcd));
-			break;
-		case 26:
-			main::use_hm_10_ble = !main::use_hm_10_ble;
-			logger::logln("use_hm_10_ble: " + char(main::use_hm_10_ble));
-			break;
-		default:
-			break;
+	if (!sMenuSessionOpen) {
+		return;
 	}
+	displayAdafruit::markMenuDirty();
+	if (item_selected < 0 || item_selected >= NUM_ITEMS) {
+		return;
+	}
+
+	*menuFlags[item_selected].flag = !*menuFlags[item_selected].flag;
+	logFlag(menuFlags[item_selected].label, *menuFlags[item_selected].flag);
+}
+
+bool menu::isOpen() {
+	return sMenuSessionOpen;
+}
+
+void menu::toggle() {
+	if (sMenuSessionOpen) {
+		closeDiscard();
+	} else {
+		open();
+	}
+}
+
+void menu::open() {
+	initMenuFlagPtrs();
+	if (sMenuSessionOpen) {
+		closeDiscard();
+		return;
+	}
+	sModeBeforeMenu = displayAdafruit::getMode();
+	if (sModeBeforeMenu == OledMode::Menu || sModeBeforeMenu == OledMode::None) {
+		sModeBeforeMenu = OledMode::Log;
+	}
+	menuDraftSnapshot(sMenuDraftBackup, menuFlagPtrs, NUM_ITEMS);
+	sMenuSessionOpen = true;
+	current_screen = 0;
+	displayAdafruit::setMode(OledMode::Menu);
+	displayAdafruit::markMenuDirty();
+	logger::logln("Menu open");
+}
+
+static OledMode oledModeAfterMenu() {
+	if (sense_react::isActive()) {
+		return OledMode::SenseReact;
+	}
+	if (avoid_objects::isActive()) {
+		return OledMode::Avoid;
+	}
+	return sModeBeforeMenu;
+}
+
+void menu::closeDiscard() {
+	if (!sMenuSessionOpen) {
+		return;
+	}
+	initMenuFlagPtrs();
+	menuDraftRestore(menuFlagPtrs, sMenuDraftBackup, NUM_ITEMS);
+	sMenuSessionOpen = false;
+	displayAdafruit::setMode(oledModeAfterMenu());
+	logger::logln("Menu close (discard)");
+}
+
+void menu::undo() {
+	closeDiscard();
+}
+
+void menu::save() {
+	if (!sMenuSessionOpen) {
+		return;
+	}
+	initMenuFlagPtrs();
 	SD_card::configSaveSD();
+	menuDraftSnapshot(sMenuDraftBackup, menuFlagPtrs, NUM_ITEMS);
+	displayAdafruit::markMenuDirty();
+	logger::logln("Menu saved");
+}
+
+void menu::toggleSensorsPage() {
+	if (!FEATURE_ENABLED(main::use_oled_sensors, USE_OLED_SENSORS)) {
+		return;
+	}
+	if (sMenuSessionOpen) {
+		return;
+	}
+	if (displayAdafruit::getMode() == OledMode::Sensors) {
+		displayAdafruit::setMode(OledMode::Log);
+	} else {
+		displayAdafruit::setMode(OledMode::Sensors);
+		displayAdafruit::drawSensorsPage();
+	}
 }
 

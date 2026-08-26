@@ -42,7 +42,11 @@ public:
     #define UPLEFT   1800
     static int exitLoop();
     static void joystick(int Xinput, int Yinput);
+    static void pollInput();
     static void controller();
+    static void pollSerial();
+    static void driveWatchdog();
+    static bool isManualControlActive();
 
 };
 

@@ -4,13 +4,65 @@
 
 #include <Arduino.h>
 #include "pesto_matrix.h"
+#include "oled_pesto_sync.h"
 #include "main_ra.h"
 #include "logger.h"
+#include "timers.h"
 
 int Pesto::screen = 0;
+PestoEmotion Pesto::heldEmotion = PestoEmotion::Idle;
+uint32_t Pesto::holdUntilMs = 0;
+
 /********************************************** the function for dot matrix display ****************************/
 // section Pesto Matrix
 /***************************************************************************************************************/
+
+// 16x8 face bitmaps (bit 0 = top). Column-major, 16 columns.
+static const unsigned char FACE_IDLE[] = {
+	0x00, 0x00, 0x24, 0x24, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x24, 0x24, 0x00, 0x00
+};
+static const unsigned char FACE_HAPPY[] = {
+	0x00, 0x00, 0x24, 0x24, 0x00, 0x00, 0x42, 0x3C,
+	0x3C, 0x42, 0x00, 0x00, 0x24, 0x24, 0x00, 0x00
+};
+static const unsigned char FACE_SAD[] = {
+	0x00, 0x00, 0x24, 0x24, 0x00, 0x00, 0x3C, 0x42,
+	0x42, 0x3C, 0x00, 0x00, 0x24, 0x24, 0x00, 0x00
+};
+static const unsigned char FACE_LOOK_LEFT[] = {
+	0x00, 0x48, 0x48, 0x00, 0x00, 0x00, 0x00, 0x18,
+	0x18, 0x00, 0x00, 0x00, 0x48, 0x48, 0x00, 0x00
+};
+static const unsigned char FACE_LOOK_RIGHT[] = {
+	0x00, 0x00, 0x12, 0x12, 0x00, 0x00, 0x00, 0x18,
+	0x18, 0x00, 0x00, 0x00, 0x00, 0x12, 0x12, 0x00
+};
+static const unsigned char FACE_LOOK_UP[] = {
+	0x00, 0x00, 0x12, 0x12, 0x00, 0x00, 0x00, 0x18,
+	0x18, 0x00, 0x00, 0x00, 0x12, 0x12, 0x00, 0x00
+};
+static const unsigned char FACE_LOOK_DOWN[] = {
+	0x00, 0x00, 0x48, 0x48, 0x00, 0x00, 0x00, 0x18,
+	0x18, 0x00, 0x00, 0x00, 0x48, 0x48, 0x00, 0x00
+};
+static const unsigned char FACE_HEART[] = {
+	0x00, 0x0C, 0x1E, 0x3E, 0x7C, 0x3E, 0x1E, 0x0C,
+	0x0C, 0x1E, 0x3E, 0x7C, 0x3E, 0x1E, 0x0C, 0x00
+};
+static const unsigned char FACE_ALERT[] = {
+	0x00, 0x00, 0x3C, 0x42, 0x5A, 0x42, 0x3C, 0x00,
+	0x00, 0x3C, 0x42, 0x5A, 0x42, 0x3C, 0x00, 0x00
+};
+static const unsigned char FACE_CURIOUS[] = {
+	0x00, 0x00, 0x18, 0x24, 0x24, 0x18, 0x00, 0x18,
+	0x18, 0x00, 0x00, 0x3C, 0x42, 0x42, 0x3C, 0x00
+};
+static const unsigned char FACE_WINK[] = {
+	0x00, 0x00, 0x08, 0x08, 0x00, 0x00, 0x42, 0x3C,
+	0x3C, 0x42, 0x00, 0x00, 0x24, 0x24, 0x00, 0x00
+};
+
 //the condition to start conveying data
 void Pesto::IIC_start() {
     digitalWrite(DotClockPIN,HIGH);
@@ -63,11 +115,82 @@ void Pesto::matrix_display(unsigned char matrix_value[]) {
     IIC_end();
 }
 
+const unsigned char* Pesto::bitmapFor(PestoEmotion e) {
+	switch (e) {
+		case PestoEmotion::Happy:     return FACE_HAPPY;
+		case PestoEmotion::Sad:       return FACE_SAD;
+		case PestoEmotion::LookLeft:  return FACE_LOOK_LEFT;
+		case PestoEmotion::LookRight: return FACE_LOOK_RIGHT;
+		case PestoEmotion::LookUp:    return FACE_LOOK_UP;
+		case PestoEmotion::LookDown:  return FACE_LOOK_DOWN;
+		case PestoEmotion::Heart:     return FACE_HEART;
+		case PestoEmotion::Alert:     return FACE_ALERT;
+		case PestoEmotion::Curious:   return FACE_CURIOUS;
+		case PestoEmotion::Wink:      return FACE_WINK;
+		case PestoEmotion::Idle:
+		default:                      return FACE_IDLE;
+	}
+}
+
+bool Pesto::holdActive(uint32_t nowMs) {
+	if (heldEmotion == PestoEmotion::Idle) {
+		return false;
+	}
+	return static_cast<int32_t>(nowMs - holdUntilMs) < 0;
+}
+
+void Pesto::displayEmotion(PestoEmotion e) {
+	unsigned char buf[16];
+	const unsigned char* src = bitmapFor(e);
+	for (int i = 0; i < 16; ++i) {
+		buf[i] = src[i];
+	}
+	matrix_display(buf);
+}
+
+void Pesto::displayBitmap(const uint8_t colMajor16[16]) {
+	unsigned char buf[16];
+	for (int i = 0; i < 16; ++i) {
+		buf[i] = colMajor16[i];
+	}
+	matrix_display(buf);
+}
+
+void Pesto::syncFromOledFrame(const uint8_t* oled1024) {
+	if (timers::timerTwoActive && timers::timerButton == 2100) {
+		return;
+	}
+	uint8_t pesto16[16];
+	oledBitmapDownsample16x8(oled1024, pesto16);
+	displayBitmap(pesto16);
+	heldEmotion = PestoEmotion::Idle;
+	holdUntilMs = 0;
+}
+
+void Pesto::showEmotion(PestoEmotion e, uint32_t nowMs, uint32_t holdMs) {
+	if (e == PestoEmotion::Idle) {
+		return;
+	}
+	// Compass owns the matrix while L1 sensor timer is active (L1 == 2100).
+	if (timers::timerTwoActive && timers::timerButton == 2100) {
+		return;
+	}
+	heldEmotion = e;
+	holdUntilMs = nowMs + holdMs;
+	displayEmotion(e);
+}
 
 void Pesto::pestoMatrix() {
     /********************************************** Make DotMatric Images*******************************************/
     // section DotMatrix Images
     /***************************************************************************************************************/
+
+	const uint32_t now = millis();
+	if (holdActive(now)) {
+		displayEmotion(heldEmotion);
+		return;
+	}
+	heldEmotion = PestoEmotion::Idle;
 
     // Array, used to store the data of the pattern
     unsigned char STOP01[] = {0x2E,0x2A,0x3A,0x00,0x02,0x3E,0x02,0x00,0x3E,0x22,0x3E,0x00,0x3E,0x0A,0x0E,0x00};
@@ -98,5 +221,5 @@ void Pesto::setup_pestoMatrix() {
     digitalWrite(DotDataPIN,LOW);
     Pesto::matrix_display(reinterpret_cast<unsigned char *>(clear));
     Pesto::pestoMatrix();
-	logger::logln("Dot Matrix initialized");
+	logger::logln("Dot matrix ok");
 }

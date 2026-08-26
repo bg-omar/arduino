@@ -15,7 +15,7 @@ void barometer::baroSetup() {
 
 	if (!barometer::bmp->begin()) {
 		if (main::log_debug) {
-			logger::logln("No valid BMP280 sensor, check wiring or try a different address!");
+		logger::logln("BMP280 fail");
 			logger::log("SensorID was: 0x");
 			logger::logHexln(barometer::bmp->sensorID(), 16);
 		}
@@ -25,7 +25,7 @@ void barometer::baroSetup() {
 		return;
 	}
 
-	logger::logln("Barometer initialized successfully");
+	logger::logln("BMP280 ok");
 
 	// Default settings from datasheet
 	barometer::bmp->setSampling(
@@ -61,9 +61,6 @@ void barometer::baroMeter() {
 		logger::log("Altitude: ");
 		logger::logFloat(altitude);
 		logger::logln(" m");
-
-		// Add a delay for stability
-		delay(2000);
 	} else {
 		logger::logln("Forced measurement failed!");
 	}

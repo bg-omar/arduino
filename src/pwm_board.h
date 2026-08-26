@@ -6,6 +6,7 @@
 #define PWM_BOARD_H
 
 #include <Adafruit_PWMServoDriver.h>
+#include "pesto_emotion.h"
 
 #define PWM_0        0
 #define PWM_1        1
@@ -43,6 +44,7 @@ public:
     static void leftLedStrip(int r_val, int g_val, int b_val);
 
     static void rightLedStrip(int r_val, int g_val, int b_val);
+    static void applyEmotionLeds(PestoEmotion e);
 
     static int posXY;
     static int posZ;
