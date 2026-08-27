@@ -5,6 +5,7 @@
 #include "vision_protocol.h"
 #include "vision_grid_protocol.h"
 #include "wallz_camera_storage_protocol.h"
+#include "wallz_episode_protocol.h"
 
 namespace vision_link {
 void begin();
@@ -36,6 +37,9 @@ void setDebug(bool on);
 // Raw frames remain on the fisheye SD and never traverse the Brain/RA path.
 void sendContext(const char* label, int familiarity, int novelty, int valueMilli);
 void requestStore(const char* reason, const char* label = "unknown");
+void requestEpisode(const char* reason, const char* label = "unknown",
+                    uint16_t preMs = 2000, uint16_t postMs = 3000);
+bool takeEpisodeEvent(EpisodeEvent& out);
 void setStorageEnabled(bool on);
 void requestStorageStatus();
 }

@@ -1,12 +1,13 @@
 /*
- * Wall-Z Fisheye Vision + Local SD Node v0.5.0
+ * Wall-Z Fisheye Vision + Episodic SD Node v0.7.0
  * Target: AI-Thinker ESP32-CAM + OV2640 fisheye lens + onboard microSD slot.
  *
  * Architecture:
  *   - fast local perception: 160x120 grayscale -> 20x15 motion grid
  *   - compact V/G telemetry -> onboard ESP32-S3 Brain
  *   - local-first SD storage in 1-bit SD_MMC mode
- *   - Brain returns semantic context / explicit SAVE requests only
+ *   - PSRAM rolling pre-event buffer + bounded post-event episode recording
+ *   - Brain returns semantic context / explicit SAVE/EPISODE requests only
  *   - raw camera frames NEVER traverse the UART or RA4M1
  *
  * SD_MMC 1-bit pins on classic ESP32:
@@ -27,9 +28,11 @@
 #include "vision_grid.h"
 #include "camera_storage_policy.h"
 #include "wallz_camera_storage_protocol.h"
+#include "wallz_episode_protocol.h"
+#include "episode_capture_policy.h"
 
 namespace {
-constexpr char kVersion[] = "0.5.0";
+constexpr char kVersion[] = "0.7.0";
 constexpr int PWDN_GPIO_NUM = 32;
 constexpr int RESET_GPIO_NUM = -1;
 constexpr int XCLK_GPIO_NUM = 0;
@@ -52,6 +55,8 @@ constexpr int kBrainTxPin = 13;  // free in SD_MMC 1-bit mode
 constexpr uint32_t kBrainBaud = 230400;
 constexpr uint32_t kBrainContextFreshMs = 2200;
 constexpr uint32_t kStorageStatusPeriodMs = 10000;
+constexpr size_t kEpisodeFrameBytes = 160u * 120u;
+constexpr uint8_t kEpisodePreSlots = 25; // max 5 s at 5 fps
 
 uint8_t previousGrid[WALLZ_VISION_GRID_CELLS] = {};
 uint8_t currentGrid[WALLZ_VISION_GRID_CELLS] = {};
@@ -73,17 +78,232 @@ char rxLine[128] = {};
 uint8_t rxPos = 0;
 
 CameraStoragePolicy storagePolicy;
+EpisodeCapturePolicy episodePolicy;
 CameraBrainContext brainContext;
 CameraStoreRequest pendingStore;
+EpisodeRequest pendingEpisode;
 bool haveBrainContext = false;
 bool havePendingStore = false;
+bool havePendingEpisode = false;
 bool sdMounted = false;
 uint32_t sdFrames = 0;
 uint32_t sdEvents = 0;
 uint32_t sdErrors = 0;
+uint32_t sdEpisodes = 0;
 uint32_t sdSession = 0;
 char sessionDir[32] = "/wallz/s0000";
 char eventsPath[48] = "/wallz/s0000/events.csv";
+
+uint8_t* preFrames = nullptr;
+uint32_t preFrameMs[kEpisodePreSlots] = {};
+WallZVisionResult preFrameVision[kEpisodePreSlots] = {};
+uint8_t preHead = 0;
+uint8_t preCount = 0;
+
+struct ActiveEpisode {
+    bool active = false;
+    uint32_t id = 0;
+    uint32_t trigger_ms = 0;
+    uint16_t pre_ms = EpisodeCapturePolicy::kDefaultPreMs;
+    uint16_t post_ms = EpisodeCapturePolicy::kDefaultPostMs;
+    uint16_t frames = 0;
+    uint16_t errors = 0;
+    char reason[WALLZ_EPISODE_REASON_CAP] = "event";
+    char label[WALLZ_EPISODE_LABEL_CAP] = "unknown";
+    char dir[56] = {};
+    char manifest[72] = {};
+} activeEpisode;
+
+
+bool ensureDir(const char* path);
+bool appendEvent(uint32_t now, uint32_t frameId, const char* reason, const char* label,
+                 const WallZVisionResult& r, bool brainFresh, const char* framePath);
+
+bool initEpisodeBuffer() {
+    if (preFrames) return true;
+    const size_t bytes = kEpisodeFrameBytes * kEpisodePreSlots;
+    preFrames = static_cast<uint8_t*>(psramFound() ? ps_malloc(bytes) : malloc(bytes));
+    if (!preFrames) {
+        Serial.printf("[FISHEYE] episode prebuffer unavailable (%u bytes)\n", static_cast<unsigned>(bytes));
+        return false;
+    }
+    memset(preFrames, 0, bytes);
+    return true;
+}
+
+void ringPushFrame(const camera_fb_t* fb, uint32_t now, const WallZVisionResult& r) {
+    if (!preFrames || !fb || fb->format != PIXFORMAT_GRAYSCALE || fb->width != 160 || fb->height != 120) return;
+    memcpy(preFrames + static_cast<size_t>(preHead) * kEpisodeFrameBytes, fb->buf, kEpisodeFrameBytes);
+    preFrameMs[preHead] = now;
+    preFrameVision[preHead] = r;
+    preHead = static_cast<uint8_t>((preHead + 1u) % kEpisodePreSlots);
+    if (preCount < kEpisodePreSlots) ++preCount;
+}
+
+bool writePgmBytes(const char* path, const uint8_t* data, size_t bytes) {
+    if (!sdMounted || !path || !data || bytes < kEpisodeFrameBytes) return false;
+    File f = SD_MMC.open(path, FILE_WRITE);
+    if (!f) { ++sdErrors; return false; }
+    f.print("P5\n160 120\n255\n");
+    const size_t written = f.write(data, kEpisodeFrameBytes);
+    f.close();
+    if (written != kEpisodeFrameBytes) { ++sdErrors; return false; }
+    return true;
+}
+
+bool appendEpisodeFrame(const char* phase, uint16_t index, uint32_t frameMs,
+                        const WallZVisionResult& r, const char* path) {
+    if (!activeEpisode.active) return false;
+    File f = SD_MMC.open(activeEpisode.manifest, FILE_APPEND);
+    if (!f) { ++sdErrors; ++activeEpisode.errors; return false; }
+    const int32_t rel = static_cast<int32_t>(frameMs - activeEpisode.trigger_ms);
+    f.printf("%s,%u,%lu,%ld,%d,%d,%d,%d,%d,%s\n",
+             phase, static_cast<unsigned>(index), static_cast<unsigned long>(frameMs),
+             static_cast<long>(rel), r.motion, r.x, r.y, r.brightness, r.contrast,
+             path ? path : "");
+    f.close();
+    return true;
+}
+
+uint16_t availablePreFrames(uint32_t now, uint16_t preMs) {
+    if (!preFrames || preCount == 0) return 0;
+    uint16_t count = 0;
+    const uint8_t oldest = static_cast<uint8_t>((preHead + kEpisodePreSlots - preCount) % kEpisodePreSlots);
+    for (uint8_t i = 0; i < preCount; ++i) {
+        const uint8_t slot = static_cast<uint8_t>((oldest + i) % kEpisodePreSlots);
+        if (static_cast<uint32_t>(now - preFrameMs[slot]) <= preMs) ++count;
+    }
+    return count;
+}
+
+bool flushPreFrames(uint32_t now, uint16_t preMs) {
+    if (!preFrames || preCount == 0 || !activeEpisode.active) return true;
+    const uint8_t oldest = static_cast<uint8_t>((preHead + kEpisodePreSlots - preCount) % kEpisodePreSlots);
+    uint16_t outIndex = 0;
+    for (uint8_t i = 0; i < preCount; ++i) {
+        const uint8_t slot = static_cast<uint8_t>((oldest + i) % kEpisodePreSlots);
+        if (static_cast<uint32_t>(now - preFrameMs[slot]) > preMs) continue;
+        char path[88];
+        snprintf(path, sizeof(path), "%s/pre_%03u_%010lu.pgm", activeEpisode.dir,
+                 static_cast<unsigned>(outIndex), static_cast<unsigned long>(preFrameMs[slot]));
+        const uint8_t* data = preFrames + static_cast<size_t>(slot) * kEpisodeFrameBytes;
+        if (writePgmBytes(path, data, kEpisodeFrameBytes)) {
+            appendEpisodeFrame("pre", outIndex, preFrameMs[slot], preFrameVision[slot], path);
+            ++activeEpisode.frames;
+            ++sdFrames;
+        } else {
+            ++activeEpisode.errors;
+        }
+        ++outIndex;
+    }
+    return true;
+}
+
+void sendEpisodeBegin(uint16_t preFramesWritten, uint16_t postTarget) {
+    Serial2.printf("VE,BEGIN,%lu,%lu,%s,%s,%u,%u\n",
+                   static_cast<unsigned long>(sdSession),
+                   static_cast<unsigned long>(activeEpisode.id),
+                   activeEpisode.reason, activeEpisode.label,
+                   static_cast<unsigned>(preFramesWritten),
+                   static_cast<unsigned>(postTarget));
+}
+
+void sendEpisodeDone() {
+    Serial2.printf("VE,DONE,%lu,%lu,%s,%s,%u,%u\n",
+                   static_cast<unsigned long>(sdSession),
+                   static_cast<unsigned long>(activeEpisode.id),
+                   activeEpisode.reason, activeEpisode.label,
+                   static_cast<unsigned>(activeEpisode.frames),
+                   static_cast<unsigned>(activeEpisode.errors));
+}
+
+void finishEpisode(uint32_t now) {
+    if (!activeEpisode.active) return;
+    File f = SD_MMC.open(activeEpisode.manifest, FILE_APPEND);
+    if (f) {
+        f.printf("end,0,%lu,%ld,0,0,0,0,0,\n",
+                 static_cast<unsigned long>(now),
+                 static_cast<long>(static_cast<int32_t>(now - activeEpisode.trigger_ms)));
+        f.close();
+    } else {
+        ++sdErrors;
+        ++activeEpisode.errors;
+    }
+    sendEpisodeDone();
+    ++sdEpisodes;
+    activeEpisode.active = false;
+    episodePolicy.finish();
+}
+
+bool beginEpisode(const camera_fb_t* fb, uint32_t now, const WallZVisionResult& r,
+                  const EpisodeRequest& req) {
+    if (!sdMounted || !storagePolicy.enabled()) return false;
+    if (activeEpisode.active || !episodePolicy.canTrigger(now)) {
+        Serial2.printf("VE,BUSY,%lu\n", static_cast<unsigned long>(activeEpisode.id));
+        return false;
+    }
+
+    activeEpisode = ActiveEpisode{};
+    activeEpisode.active = true;
+    activeEpisode.id = sdEpisodes + 1u;
+    activeEpisode.trigger_ms = now;
+    activeEpisode.pre_ms = req.pre_ms;
+    activeEpisode.post_ms = req.post_ms;
+    strncpy(activeEpisode.reason, req.reason, sizeof(activeEpisode.reason) - 1);
+    strncpy(activeEpisode.label, req.label, sizeof(activeEpisode.label) - 1);
+    snprintf(activeEpisode.dir, sizeof(activeEpisode.dir), "%s/ep%06lu", sessionDir,
+             static_cast<unsigned long>(activeEpisode.id));
+    if (!ensureDir(activeEpisode.dir)) {
+        ++sdErrors;
+        activeEpisode.active = false;
+        Serial2.println("VE,ERROR");
+        return false;
+    }
+    snprintf(activeEpisode.manifest, sizeof(activeEpisode.manifest), "%s/frames.csv", activeEpisode.dir);
+    File mf = SD_MMC.open(activeEpisode.manifest, FILE_WRITE);
+    if (!mf) {
+        ++sdErrors;
+        activeEpisode.active = false;
+        Serial2.println("VE,ERROR");
+        return false;
+    }
+    const bool brainFresh = haveBrainContext && static_cast<uint32_t>(now - brainContext.received_ms) <= kBrainContextFreshMs;
+    mf.println("phase,index,ms,relative_ms,motion,x,y,brightness,contrast,file");
+    mf.printf("# reason=%s,label=%s,trigger_ms=%lu,pre_ms=%u,post_ms=%u,familiarity=%d,novelty=%d,value=%d,brain_fresh=%d\n",
+              activeEpisode.reason, activeEpisode.label, static_cast<unsigned long>(now),
+              static_cast<unsigned>(activeEpisode.pre_ms), static_cast<unsigned>(activeEpisode.post_ms),
+              brainFresh ? brainContext.familiarity : 0,
+              brainFresh ? brainContext.novelty : 1000,
+              brainFresh ? brainContext.value_milli : 0,
+              brainFresh ? 1 : 0);
+    mf.close();
+
+    const uint16_t preAvailable = availablePreFrames(now, activeEpisode.pre_ms);
+    flushPreFrames(now, activeEpisode.pre_ms);
+
+    char eventPath[88];
+    snprintf(eventPath, sizeof(eventPath), "%s/event_%010lu.pgm", activeEpisode.dir, static_cast<unsigned long>(now));
+    if (fb && fb->format == PIXFORMAT_GRAYSCALE && fb->buf &&
+        writePgmBytes(eventPath, fb->buf, fb->len)) {
+        appendEpisodeFrame("event", 0, now, r, eventPath);
+        ++activeEpisode.frames;
+        ++sdFrames;
+    } else {
+        ++activeEpisode.errors;
+    }
+
+    episodePolicy.begin(now, activeEpisode.post_ms);
+    const uint16_t postTarget = static_cast<uint16_t>((activeEpisode.post_ms + EpisodeCapturePolicy::kSamplePeriodMs - 1u) /
+                                                      EpisodeCapturePolicy::kSamplePeriodMs);
+    sendEpisodeBegin(preAvailable, postTarget);
+    appendEvent(now, sdFrames, activeEpisode.reason, activeEpisode.label, r, brainFresh, activeEpisode.dir);
+    return true;
+}
+
+void queueEpisode(const EpisodeRequest& req) {
+    pendingEpisode = req;
+    havePendingEpisode = true;
+}
 
 void sendAck(const char* msg) {
     Serial2.print("VA,");
@@ -230,6 +450,12 @@ void handleCommand(char* line) {
     if (wallzParseStoreRequest(line, req)) {
         queueExplicitStore(req);
         sendAck("SAVE,QUEUED");
+        return;
+    }
+    EpisodeRequest ep;
+    if (wallzParseEpisodeRequest(line, ep)) {
+        queueEpisode(ep);
+        sendAck("EP,QUEUED");
         return;
     }
 
@@ -389,6 +615,35 @@ void maybeStoreFrame(const camera_fb_t* fb, uint32_t now, const WallZVisionResul
     if (!sdMounted || !storagePolicy.enabled()) return;
     const bool brainFresh = haveBrainContext && static_cast<uint32_t>(now - brainContext.received_ms) <= kBrainContextFreshMs;
 
+    // Active episode always gets serviced first. A new trigger may wait one-deep.
+    if (activeEpisode.active) {
+        if (episodePolicy.sampleDue(now)) {
+            const uint16_t index = episodePolicy.postFrames();
+            char path[88];
+            snprintf(path, sizeof(path), "%s/post_%03u_%010lu.pgm", activeEpisode.dir,
+                     static_cast<unsigned>(index), static_cast<unsigned long>(now));
+            if (fb && fb->format == PIXFORMAT_GRAYSCALE && fb->buf &&
+                writePgmBytes(path, fb->buf, fb->len)) {
+                appendEpisodeFrame("post", index, now, result, path);
+                ++activeEpisode.frames;
+                ++sdFrames;
+            } else {
+                ++activeEpisode.errors;
+            }
+            episodePolicy.notePostFrame();
+        }
+        if (episodePolicy.postComplete(now)) finishEpisode(now);
+        if (activeEpisode.active) return;
+    }
+
+    // Brain-triggered episode (teach/reward/mode/obstacle/manual) has priority.
+    if (havePendingEpisode) {
+        const bool started = beginEpisode(fb, now, result, pendingEpisode);
+        havePendingEpisode = false;
+        if (started) return;
+    }
+
+    // Backward-compatible single-frame request.
     if (havePendingStore) {
         if (storagePolicy.acceptExplicit(now)) {
             const char* label = pendingStore.label[0] ? pendingStore.label : (brainFresh ? brainContext.label : "unknown");
@@ -398,6 +653,7 @@ void maybeStoreFrame(const camera_fb_t* fb, uint32_t now, const WallZVisionResul
         }
     }
 
+    // Local autonomous event selection becomes an episode trigger in v0.7.
     CameraStoragePolicyInput in;
     in.now_ms = now;
     in.motion = result.motion;
@@ -405,20 +661,32 @@ void maybeStoreFrame(const camera_fb_t* fb, uint32_t now, const WallZVisionResul
     in.familiarity = brainFresh ? brainContext.familiarity : 0;
     in.novelty = brainFresh ? brainContext.novelty : 1000;
     const CameraAutoSaveReason autoReason = storagePolicy.evaluate(in);
-    if (autoReason != CameraAutoSaveReason::None) {
-        const char* label = brainFresh ? brainContext.label : "unknown";
-        savePgmFrame(fb, now, CameraStoragePolicy::name(autoReason), label, result, brainFresh);
+    if (autoReason != CameraAutoSaveReason::None && episodePolicy.canTrigger(now)) {
+        EpisodeRequest ep;
+        strncpy(ep.reason, CameraStoragePolicy::name(autoReason), sizeof(ep.reason) - 1);
+        strncpy(ep.label, brainFresh ? brainContext.label : "unknown", sizeof(ep.label) - 1);
+        ep.pre_ms = EpisodeCapturePolicy::kDefaultPreMs;
+        ep.post_ms = EpisodeCapturePolicy::kDefaultPostMs;
+        if (beginEpisode(fb, now, result, ep)) return;
     }
+
+    // Maintain rolling visual history only while idle.
+    if (episodePolicy.sampleDue(now)) ringPushFrame(fb, now, result);
 }
 }
 
 void setup() {
     Serial.begin(115200);
     delay(250);
-    Serial.printf("[FISHEYE] Wall-Z Fisheye Vision + SD v%s\n", kVersion);
+    Serial.printf("[FISHEYE] Wall-Z Fisheye Vision + Episodic SD v%s\n", kVersion);
 
     const bool storageOk = initStorage();
-    Serial.printf("[FISHEYE] SD 1-bit: %s, session=%lu\n", storageOk ? "ready" : "unavailable", static_cast<unsigned long>(sdSession));
+    const bool episodeBufferOk = initEpisodeBuffer();
+    Serial.printf("[FISHEYE] SD 1-bit: %s, session=%lu, prebuffer=%s (%u frames @ %u fps)\n",
+                  storageOk ? "ready" : "unavailable", static_cast<unsigned long>(sdSession),
+                  episodeBufferOk ? "ready" : "unavailable",
+                  static_cast<unsigned>(kEpisodePreSlots),
+                  static_cast<unsigned>(EpisodeCapturePolicy::kSampleFps));
 
     // Start Brain UART after SD_MMC has claimed GPIO14/15/2.
     Serial2.setRxBufferSize(512);
@@ -478,9 +746,10 @@ void loop() {
 
     if (debugEnabled && static_cast<uint32_t>(now - lastDebugMs) >= 1000) {
         lastDebugMs = now;
-        Serial.printf("[FISHEYE] fps=%.1f motion=%d x=%d y=%d grid=%uHz sd=%d frames=%lu\n",
+        Serial.printf("[FISHEYE] fps=%.1f motion=%d x=%d y=%d grid=%uHz sd=%d frames=%lu episodes=%lu ep_active=%d\n",
                       fpsX10 / 10.0f, result.motion, result.x, result.y, gridFps,
-                      sdMounted ? 1 : 0, static_cast<unsigned long>(sdFrames));
+                      sdMounted ? 1 : 0, static_cast<unsigned long>(sdFrames),
+                      static_cast<unsigned long>(sdEpisodes), activeEpisode.active ? 1 : 0);
     }
     delay(1);
 }

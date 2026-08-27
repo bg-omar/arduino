@@ -99,3 +99,25 @@ Brain v0.5 additions
 16. RA SD remains configuration/system storage
    - Existing RA4M1 SPI SD and SETUP.TXT path remain unchanged.
    - v0.5 does not mirror raw camera PGM files to RA SD.
+
+Brain v0.6 additions
+--------------------
+17. Shared PS4 / Brain authority
+   - PS4 may remain connected permanently.
+   - Only active manual stick/head input temporarily pauses Brain actuation.
+   - Brain remains armed and resumes automatically on neutral input.
+   - OPTIONS is explicit autonomy stop + runtime autonomy menu.
+
+Brain v0.7 additions
+--------------------
+18. Episodic visual memory is local-first
+   - Fisheye keeps a rolling PSRAM pre-event history and writes full PGM episode windows to its own microSD.
+   - Default window: 2 s pre + trigger + 3 s post at 5 fps.
+   - Raw episode frames never traverse S3 or RA4M1 UART links.
+19. Episode semantics / index
+   - S3 sends C,EP reason/label/pre/post requests and receives VE BEGIN/DONE acknowledgements.
+   - S3 SPIFFS `/episode_index.csv` stores compact multimodal trigger context and camera episode ids.
+   - RA4M1 SPI SD remains SETUP.TXT/config/system storage; do not mirror raw visual episodes there.
+20. Episode triggers
+   - teach/reward, brain arm/disarm, runtime autonomy modes, hard stop and obstacle transitions can trigger episodes.
+   - camera-local unknown/novel/motion events can trigger episodes without Brain availability.

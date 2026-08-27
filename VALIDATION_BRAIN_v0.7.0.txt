@@ -1,0 +1,64 @@
+Wall-Z Brain v0.7.0 validation
+================================
+Date: 2026-08-27
+
+Scope
+-----
+- v0.7 episodic memory protocol/timing
+- v0.3-v0.6 standalone regression tests
+- strict host C++ compilation
+- target-like syntax checks for modified ESP sources
+- clean-room v0.6 -> v0.7 patch round-trip
+- critical RA/PS4/safety source preservation
+
+PASS: v0.3 brain/visual-memory standalone regression
+PASS: v0.4 imitation-learning standalone regression
+PASS: v0.5 camera-storage standalone regression
+PASS: v0.6 shared-control standalone regression
+PASS: v0.7 episode protocol parser
+PASS: v0.7 2s-pre / post-window timing policy
+PASS: AddressSanitizer + UndefinedBehaviorSanitizer on v0.7 episode core
+PASS: C++17 -Wall -Wextra -Werror fisheye main syntax against ESP/Arduino API stubs
+PASS: C++17 -Wall -Wextra -Werror S3 vision-link syntax against ESP/Arduino API stubs
+PASS: C++17 -Wall -Wextra -Werror S3 main syntax against ESP/Arduino API stubs
+PASS: clean-room patch application and byte-for-byte tree comparison
+
+Critical v0.6 files byte-for-byte unchanged
+-------------------------------------------
+PASS src/PS4.cpp
+PASS src/motor.cpp
+PASS src/pwm_board.cpp
+PASS src/robot_modes.cpp
+PASS src/brain_link.cpp
+PASS src/main_ra.cpp
+PASS src/autonomy_menu.h
+PASS src_esp32_ps4/main_ps4.cpp
+PASS src/SD_card.cpp
+
+Episode storage defaults
+------------------------
+Perception: 160x120 grayscale at normal camera loop rate
+Episode sample rate: 5 fps
+Default pre-event: 2000 ms -> up to 10 frames
+Trigger frame: 1
+Default post-event: 3000 ms -> about 15 frames
+Typical raw payload: 26 * 19,200 B = 499,200 B plus small PGM/CSV metadata
+PSRAM ring allocation: 25 * 19,200 B = 480,000 B (up to 5 s pre-history at 5 fps)
+If PSRAM prebuffer allocation fails, post-event recording remains available but pre-history is absent.
+
+Safety/storage invariants
+-------------------------
+PASS raw episode frames remain on fisheye microSD
+PASS no raw camera frame route to S3 or RA4M1
+PASS RA4M1 SPI SD / SETUP.TXT source unchanged
+PASS fisheye remains perception/storage-only; no motor authority
+PASS PS4 shared-control / OPTIONS menu source unchanged
+PASS RA4M1 motor/safety authority source unchanged
+
+Not executed in this environment
+--------------------------------
+PlatformIO target builds were not executed because the `pio` CLI is not installed here.
+Run on the development machine:
+  run_brain_v0.7_tests.cmd
+  run_brain_v0.7_build.cmd
+  run_all.cmd

@@ -1,6 +1,6 @@
-# Wall-Z Brain v0.6.0
+# Wall-Z Brain v0.7.0
 
-Current release: shared PS4/Brain control + OPTIONS autonomy menu. See `README_BRAIN_v0.6.0.md`.
+Current release: shared PS4/Brain control + OPTIONS autonomy menu. See `README_BRAIN_v0.7.0.md`.
 
 This is my source code for my Arduino uno R4 Wifi robot
 

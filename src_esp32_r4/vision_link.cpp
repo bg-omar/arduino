@@ -18,6 +18,8 @@ uint32_t sLastGridLocalMs = 0;
 CameraStorageStatus sStorage{};
 bool sHaveStorage = false;
 uint32_t sLastStorageLocalMs = 0;
+EpisodeEvent sEpisodeEvent{};
+bool sHaveEpisodeEvent = false;
 char sLine[704] = {};
 uint16_t sLinePos = 0;
 char sLastMessage[64] = "none";
@@ -59,6 +61,12 @@ void handleLine(char* line, uint32_t now) {
         sLastStorageLocalMs = now;
         return;
     }
+    EpisodeEvent ep;
+    if (wallzParseEpisodeEvent(line, ep)) {
+        sEpisodeEvent = ep;
+        sHaveEpisodeEvent = true;
+        return;
+    }
     if (strncmp(line, "FISHEYE,", 8) == 0 || strncmp(line, "VA,", 3) == 0) {
         strncpy(sLastMessage, line, sizeof(sLastMessage) - 1);
         sLastMessage[sizeof(sLastMessage) - 1] = '\0';
@@ -74,6 +82,7 @@ void begin() {
     sHaveTelemetry = false;
     sHaveGrid = false;
     sHaveStorage = false;
+    sHaveEpisodeEvent = false;
     sLinePos = 0;
     sendLine("C,PING");
     sendLine("C,GRID,2");
@@ -151,6 +160,23 @@ void requestStore(const char* reason, const char* label) {
     char b[80];
     snprintf(b, sizeof(b), "C,SAVE,%s,%s", safeToken(reason, "manual"), safeToken(label, "unknown"));
     sendLine(b);
+}
+
+void requestEpisode(const char* reason, const char* label, uint16_t preMs, uint16_t postMs) {
+    preMs = static_cast<uint16_t>(clampInt(preMs, 0, 5000));
+    postMs = static_cast<uint16_t>(clampInt(postMs, 250, 10000));
+    char b[112];
+    snprintf(b, sizeof(b), "C,EP,%s,%s,%u,%u",
+             safeToken(reason, "event"), safeToken(label, "unknown"),
+             static_cast<unsigned>(preMs), static_cast<unsigned>(postMs));
+    sendLine(b);
+}
+
+bool takeEpisodeEvent(EpisodeEvent& out) {
+    if (!sHaveEpisodeEvent) return false;
+    out = sEpisodeEvent;
+    sHaveEpisodeEvent = false;
+    return true;
 }
 
 void setStorageEnabled(bool on) { sendLine(on ? "C,SD,1" : "C,SD,0"); }
