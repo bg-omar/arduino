@@ -1,0 +1,3247 @@
+diff --git a/BRAIN_V0.1_MANIFEST.txt b/BRAIN_V0.1_MANIFEST.txt
+new file mode 100644
+index 0000000..6797d66
+--- /dev/null
++++ b/BRAIN_V0.1_MANIFEST.txt
+@@ -0,0 +1,35 @@
++Wall-Z Brain v0.1.0
++===================
++
++NEW / BRAIN FILES
++src/brain_protocol.h
++src/brain_link.h
++src/brain_link.cpp
++src_esp32_r4/brain_core.h
++src_esp32_r4/brain_store.h
++src_esp32_r4/brain_store.cpp
++src_esp32_r4/ra_link.h
++src_esp32_r4/ra_link.cpp
++test/test_brain_v01/test_main.cpp
++tools/brain_test_standalone.cpp
++README_BRAIN_v0.1.0.md
++CHANGELOG_BRAIN_v0.1.0.md
++run_brain_v0.1_tests.cmd
++run_brain_v0.1_build.cmd
++run_all.cmd
++run_upload_ra.cmd
++run_upload_brain_s3.cmd
++run_upload_ps4_cam.cmd
++
++MODIFIED
++src/main_ra.cpp             scheduler hooks + Brain init/tick
++src/config.h                USE_BRAIN_LINK = 1
++src_esp32_r4/main_esp.cpp   gateway -> Brain v0.1 dashboard/learning
++
++CONTROL IMPLEMENTATION RETAINED
++src/PS4.cpp
++src/motor.cpp
++src/pwm_board.cpp
++src/robot_modes.cpp
++src_esp32_ps4/main_ps4.cpp
++src_esp32_cam/*
+diff --git a/CHANGELOG_BRAIN_v0.1.0.md b/CHANGELOG_BRAIN_v0.1.0.md
+new file mode 100644
+index 0000000..bb32a50
+--- /dev/null
++++ b/CHANGELOG_BRAIN_v0.1.0.md
+@@ -0,0 +1,41 @@
++# Changelog — Wall-Z Brain v0.1.0
++
++## Added
++
++- RA4M1 <-> onboard ESP32-S3 Brain telemetry protocol.
++- 10 Hz structured sensor/world-state telemetry.
++- 4 Hz Brain heartbeat.
++- RA-side Brain command parser and independent safety gates.
++- Manual PS4 override auto-disarm.
++- Existing autonomous robot-mode interlock.
++- 350 ms maximum Brain motor pulse.
++- 350 mm + fresh-sonar forward-motion gate.
++- ESP32-S3 `BrainCore`: novelty, curiosity, arousal, confidence, valence.
++- Small online Q-learning policy.
++- Positive/negative web reward input.
++- NVS persistence of learned Q-table/state.
++- Brain/robot JSON APIs and expanded web dashboard.
++- Native tests for protocol, safety context classification, reward learning and persistence representation.
++- Windows build/test/upload helpers.
++
++## Preserved
++
++- Existing PS4 ESP32-CAM protocol and controller firmware.
++- Existing RA4M1 PS4 parsing and tank-drive behavior.
++- Existing motor implementation.
++- Existing head-servo implementation.
++- Existing radar, avoid, follow-light, dancing and sense-react behavior.
++- Existing front ESP32-CAM firmware.
++- Existing ESP32-S3 WiFi/NTP/HTTP gateway functionality.
++- ESP_UNO_R4 CDC/CMSIS-DAP bridge setup.
++
++## Deliberately deferred
++
++- TensorFlow Lite Micro.
++- Camera neural inference.
++- Person/face identity memory.
++- MQTT Brain topics.
++- Speech recognition.
++- LLM/cloud cognition.
++
++These are deferred until the control/telemetry/learning substrate is hardware-validated.
+diff --git a/README_BRAIN_v0.1.0.md b/README_BRAIN_v0.1.0.md
+new file mode 100644
+index 0000000..0ec5370
+--- /dev/null
++++ b/README_BRAIN_v0.1.0.md
+@@ -0,0 +1,246 @@
++# Wall-Z Brain v0.1.0
++
++This release adds a deliberately conservative cognitive layer to the existing Wall-Z project. Existing motor, servo, PS4, radar, avoidance, display and sensor code remains the robot-control authority on the RA4M1. The onboard ESP32-S3 becomes the higher-level learning / memory processor.
++
++## Architecture
++
++```text
++PS4 controller
++    |
++    v Bluetooth Classic
++ESP32-CAM PS4 host                 front ESP32-CAM
++(existing firmware unchanged)      (existing camera firmware unchanged)
++    | TX -> RX                            |
++    v                                     | future vision events
++RA4M1 / UNO R4                            |
++├─ motors                                 |
++├─ PWM / head servos                      |
++├─ sonar                                  |
++├─ gyro                                   |
++├─ light + microphones                    |
++├─ existing robot modes                   |
++├─ PS4 manual override                    |
++└─ Brain safety gate                      |
++    | internal UART 115200                |
++    v                                     |
++ESP32-S3 onboard <-------------------------+
++├─ WiFi + NTP + web UI
++├─ world-state telemetry
++├─ novelty / curiosity / arousal
++├─ small online Q-learning table
++├─ reward input
++├─ persistent NVS memory
++└─ optional low-authority autonomy
++```
++
++## What v0.1 learns
++
++The brain does **not** claim consciousness and it does not use TensorFlow yet. It creates a small adaptive state from live sensor observations and learns action values using Q-learning:
++
++```text
++Q(s,a) <- Q(s,a) + alpha * [r + gamma * max_a Q(s',a) - Q(s,a)]
++```
++
++Current discrete contexts:
++
++- calm
++- obstacle
++- light-left
++- light-right
++- sound-event
++- motion-event
++
++Current possible brain actions:
++
++- idle
++- stop
++- look-left
++- look-right
++- creep-forward
++- turn-left
++- turn-right
++
++The web UI exposes positive and negative reward buttons. Q values and cognitive metrics are persisted in ESP32-S3 NVS so Wall-Z can continue from previous experience after reboot.
++
++## Authority and safety
++
++The design is intentionally asymmetric:
++
++```text
++PS4 / human control
++        > RA4M1 safety + existing robot modes
++        > ESP32-S3 Brain
++```
++
++RA4M1 independently enforces:
++
++- brain starts disarmed;
++- manual PS4 input immediately disarms Brain;
++- existing RA robot modes prevent Brain arming;
++- Brain heartbeat timeout: 1200 ms;
++- one Brain motor pulse is at most 350 ms;
++- forward Brain movement requires a fresh sonar reading;
++- minimum forward clearance: 350 mm;
++- forward/turn/reverse Brain motion uses creep PWM;
++- `STOP` is always accepted;
++- head angles are clamped to the existing servo range.
++
++The ESP32-S3 therefore cannot simply leave the drive motors running if its loop, WiFi stack or learning logic fails.
++
++## Internal protocol
++
++RA4M1 -> ESP32-S3 at 10 Hz:
++
++```text
++T,ms,distance_mm,light_l,light_r,mic_l,mic_r,gx_mrad,gy_mrad,gz_mrad,head_xy,head_z,manual,robot_mode,brain_armed
++```
++
++ESP32-S3 -> RA4M1:
++
++```text
++B,HB
++B,ARM,0
++B,ARM,1
++B,STOP
++B,HEAD,xy,z
++B,MOVE,F,duration_ms
++B,MOVE,B,duration_ms
++B,MOVE,L,duration_ms
++B,MOVE,R,duration_ms
++```
++
++The onboard S3 side uses the same `SERIAL_AT` configured by `ESP_UNO_R4`; the RA side uses `SERIAL_AT=Serial2` as already configured in `platformio.ini`.
++
++## Web interface
++
++Open the IP printed by the ESP32-S3 serial monitor. v0.1 adds:
++
++- live RA link state and telemetry;
++- sonar distance;
++- light and microphone pairs;
++- gyro values;
++- head servo position;
++- manual / existing robot-mode state;
++- novelty, curiosity, arousal, confidence and valence;
++- current context and suggested action;
++- ARM / Disarm / STOP;
++- + reward / - reward;
++- Reset learning;
++- existing WiFi / NTP / heap / log information.
++
++HTTP endpoints:
++
++```text
++GET  /api/status
++GET  /api/log
++GET  /api/robot
++GET  /api/brain
++POST /api/brain/arm?on=1
++POST /api/brain/arm?on=0
++POST /api/brain/reward?v=1
++POST /api/brain/reward?v=-1
++POST /api/brain/reset
++POST /api/robot/stop
++```
++
++## Build
++
++From a PlatformIO terminal:
++
++```bat
++run_brain_v0.1_tests.cmd
++run_brain_v0.1_build.cmd
++```
++
++or:
++
++```bat
++run_all.cmd
++```
++
++`run_all.cmd` tests the Arduino-free Brain core and builds all four existing environments:
++
++```text
++src          RA4M1 robot
++esp32_r4     onboard ESP32-S3 Brain
++esp32_ps4    existing PS4 ESP32-CAM host
++esp32_cam    existing front camera
++```
++
++Uploads remain separate on purpose:
++
++```bat
++run_upload_ra.cmd
++run_upload_brain_s3.cmd
++run_upload_ps4_cam.cmd
++```
++
++The onboard S3 must be put into its required download mode before flashing it, exactly as in the existing ESP_UNO_R4 workflow.
++
++## PS4 / motors / servo compatibility
++
++v0.1 does not rewrite the existing control implementation. In particular these existing files are retained as the primary control implementation:
++
++```text
++src/PS4.cpp
++src/PS4.h
++src/motor.cpp
++src/motor.h
++src/pwm_board.cpp
++src/pwm_board.h
++src/robot_modes.cpp
++src_esp32_ps4/main_ps4.cpp
++```
++
++Only `main_ra.cpp` gets Brain scheduler calls, and `config.h` gets `USE_BRAIN_LINK=1`.
++
++## Why the old fisheye ESP32-CAM felt slow
++
++The existing front-camera code is retained unchanged in v0.1, but its old streaming configuration explains much of the latency:
++
++- `FRAMESIZE_SVGA` (800 x 600);
++- JPEG encoding/transfer over WiFi;
++- only one frame buffer (`fb_count = 1`);
++- the MJPEG HTTP handler remains inside a continuous stream loop for the client.
++
++That is appropriate for image quality, not low-latency robot vision. A later camera/vision release should benchmark e.g. QVGA/VGA, two PSRAM frame buffers where supported, grab-latest behavior, and local feature extraction rather than sending every full frame to the Brain.
++
++## TensorFlow / TinyML roadmap
++
++Recommended next stages:
++
++```text
++v0.1  telemetry + memory + reward + online adaptive policy       <-- this release
++v0.2  fast fisheye vision node + motion/color/face events
++v0.3  TinyML/TFLite-Micro classifier on compact sensor features
++v0.4  imitation learning from PS4 demonstrations
++v0.5  episodic memory + learned person/object associations
++```
++
++TensorFlow should consume the same world-state interface; it should not obtain direct motor authority.
++
++## References
++
++```latex
++\begin{thebibliography}{9}
++
++\bibitem{WatkinsDayan1992}
++C.~J.~C.~H. Watkins and P. Dayan,
++``Q-learning,''
++\textit{Machine Learning}, vol.~8, pp.~279--292, 1992.
++\doi{10.1007/BF00992698}
++
++\bibitem{ArduinoUNOR4WiFi2026}
++Arduino,
++\textit{UNO R4 WiFi Hardware Documentation},
++Arduino Documentation, 2026.
++\url{https://docs.arduino.cc/hardware/uno-r4-wifi/}
++
++\bibitem{VshymanskyyESPUNOR4}
++V. Shymanskyy,
++\textit{ESP\_UNO\_R4: ESP32-S3 USB/CMSIS-DAP support for Arduino UNO R4 WiFi},
++GitHub repository, accessed 2026.
++\url{https://github.com/vshymanskyy/ESP_UNO_R4}
++
++\end{thebibliography}
++```
+diff --git a/VALIDATION_BRAIN_v0.1.0.txt b/VALIDATION_BRAIN_v0.1.0.txt
+new file mode 100644
+index 0000000..80b0c1d
+--- /dev/null
++++ b/VALIDATION_BRAIN_v0.1.0.txt
+@@ -0,0 +1,38 @@
++Wall-Z Brain v0.1.0 validation
++================================
++
++Completed in build workspace:
++[PASS] brain_protocol.h standalone parser test
++[PASS] BrainCore observation / obstacle context test
++[PASS] BrainCore positive reward increases Q-value
++[PASS] BrainPersist round-trip restore test
++[PASS] g++ -std=c++17 -Wall -Wextra -Werror for Arduino-free Brain core
++
++Compatibility checksum comparison against uploaded Arduino-R4_UNO_Wall-Z(1).zip:
++[UNCHANGED] src/PS4.cpp
++[UNCHANGED] src/motor.cpp
++[UNCHANGED] src/pwm_board.cpp
++[UNCHANGED] src/robot_modes.cpp
++[UNCHANGED] src_esp32_ps4/main_ps4.cpp
++[UNCHANGED] src_esp32_cam/main.cpp
++
++Only these pre-existing project files were modified:
++- src/config.h
++- src/main_ra.cpp
++- src_esp32_r4/main_esp.cpp
++
++Hardware/PlatformIO build status:
++[NOT RUN HERE] Full PlatformIO toolchain is not installed in the artifact environment.
++Use run_brain_v0.1_tests.cmd and run_brain_v0.1_build.cmd on the Wall-Z development machine.
++
++Important hardware validation sequence:
++1. Build native Brain tests.
++2. Build RA4M1 and ESP32-S3 firmware.
++3. Flash RA4M1 first and verify PS4/motors/servos unchanged with Brain disarmed.
++4. Flash ESP32-S3 Brain firmware.
++5. Verify /api/robot telemetry with wheels raised/off ground.
++6. Verify manual PS4 movement immediately sets brain_armed=0.
++7. ARM Brain with wheels raised and verify <=350 ms motor pulses.
++8. Put an obstacle <350 mm ahead and verify forward command is rejected.
++9. Disconnect/reboot S3 while Brain is moving and verify RA heartbeat failsafe stops it.
++10. Only then perform floor tests at creep speed.
+diff --git a/run_all.cmd b/run_all.cmd
+new file mode 100644
+index 0000000..f98e050
+--- /dev/null
++++ b/run_all.cmd
+@@ -0,0 +1,12 @@
++@echo off
++setlocal
++cd /d "%~dp0"
++call run_brain_v0.1_tests.cmd || exit /b 1
++call run_brain_v0.1_build.cmd || exit /b 1
++echo ============================================================
++echo Optional nodes: PS4 ESP32-CAM + front ESP32-CAM
++echo ============================================================
++pio run -e esp32_ps4 || exit /b 1
++pio run -e esp32_cam || exit /b 1
++echo ============================================================
++echo ALL WALL-Z v0.1 BUILDS OK
+diff --git a/run_brain_v0.1_build.cmd b/run_brain_v0.1_build.cmd
+new file mode 100644
+index 0000000..6948220
+--- /dev/null
++++ b/run_brain_v0.1_build.cmd
+@@ -0,0 +1,16 @@
++@echo off
++setlocal
++cd /d "%~dp0"
++where pio >nul 2>nul
++if errorlevel 1 (
++  echo [ERROR] PlatformIO CLI ^(pio^) not found in PATH.
++  exit /b 1
++)
++echo ============================================================
++echo Wall-Z Brain v0.1.0 - build RA4M1 + onboard ESP32-S3
++echo ============================================================
++echo [1/2] RA4M1
++pio run -e src || exit /b 1
++echo [2/2] ESP32-S3 Brain
++pio run -e esp32_r4 || exit /b 1
++echo BUILD OK
+diff --git a/run_brain_v0.1_tests.cmd b/run_brain_v0.1_tests.cmd
+new file mode 100644
+index 0000000..f32d6ad
+--- /dev/null
++++ b/run_brain_v0.1_tests.cmd
+@@ -0,0 +1,14 @@
++@echo off
++setlocal
++cd /d "%~dp0"
++where pio >nul 2>nul
++if errorlevel 1 (
++  echo [ERROR] PlatformIO CLI ^(pio^) not found in PATH.
++  echo Open a PlatformIO terminal or install PlatformIO Core first.
++  exit /b 1
++)
++echo ============================================================
++echo Wall-Z Brain v0.1.0 - native tests
++echo ============================================================
++pio test -e native -f test_brain_v01
++exit /b %errorlevel%
+diff --git a/run_upload_brain_s3.cmd b/run_upload_brain_s3.cmd
+new file mode 100644
+index 0000000..f6a4def
+--- /dev/null
++++ b/run_upload_brain_s3.cmd
+@@ -0,0 +1,12 @@
++@echo off
++setlocal
++cd /d "%~dp0"
++echo ============================================================
++echo Wall-Z Brain v0.1.0 - ESP32-S3 upload
++echo ============================================================
++echo Put the onboard ESP32-S3 in download mode as required by your
++ echo current UNO R4 WiFi / ESP_UNO_R4 workflow before continuing.
++echo This overwrites the onboard S3 firmware; the project keeps the
++ echo CDC/CMSIS-DAP bridge through ESP_UNO_R4.
++pause
++pio run -e esp32_r4 -t upload
+diff --git a/run_upload_ps4_cam.cmd b/run_upload_ps4_cam.cmd
+new file mode 100644
+index 0000000..5619fdd
+--- /dev/null
++++ b/run_upload_ps4_cam.cmd
+@@ -0,0 +1,5 @@
++@echo off
++setlocal
++cd /d "%~dp0"
++echo Uploading existing ESP32-CAM PS4 host firmware (unchanged)...
++pio run -e esp32_ps4 -t upload
+diff --git a/run_upload_ra.cmd b/run_upload_ra.cmd
+new file mode 100644
+index 0000000..d8b4c38
+--- /dev/null
++++ b/run_upload_ra.cmd
+@@ -0,0 +1,5 @@
++@echo off
++setlocal
++cd /d "%~dp0"
++echo Uploading RA4M1 robot firmware...
++pio run -e src -t upload
+diff --git a/src/brain_link.cpp b/src/brain_link.cpp
+new file mode 100644
+index 0000000..8684aef
+--- /dev/null
++++ b/src/brain_link.cpp
+@@ -0,0 +1,270 @@
++#include "brain_link.h"
++
++#include <Arduino.h>
++#include <cmath>
++#include <cstdio>
++#include <cstring>
++#include <cstdlib>
++
++#include "PS4.h"
++#include "analog.h"
++#include "avoid_objects.h"
++#include "config.h"
++#include "gyroscope.h"
++#include "main_ra.h"
++#include "motor.h"
++#include "pwm_board.h"
++#include "robot_modes.h"
++
++namespace {
++constexpr uint32_t kTelemetryPeriodMs = 100;
++constexpr uint32_t kHeartbeatTimeoutMs = 1200;
++constexpr uint32_t kMaxMoveMs = 350;
++constexpr int kForwardClearanceMm = 350;
++
++bool sArmed = false;
++bool sMoveActive = false;
++uint32_t sMoveDeadlineMs = 0;
++uint32_t sLastHeartbeatMs = 0;
++uint32_t sLastTelemetryMs = 0;
++char sRxLine[96] = {};
++uint8_t sRxPos = 0;
++
++bool deadlineReached(uint32_t now, uint32_t deadline) {
++    return static_cast<int32_t>(now - deadline) >= 0;
++}
++
++int clampInt(int v, int lo, int hi) {
++    if (v < lo) return lo;
++    if (v > hi) return hi;
++    return v;
++}
++
++void sendAck(const char* text) {
++    SERIAL_AT.print("A,");
++    SERIAL_AT.println(text);
++}
++
++void cancelBrainMotion(bool stopMotor) {
++    if (stopMotor && sMoveActive && !PS4::isManualControlActive()) {
++        Motor::Car_Stop();
++    }
++    sMoveActive = false;
++    sMoveDeadlineMs = 0;
++}
++
++void setArmed(bool armed, uint32_t now) {
++    if (!armed) {
++        cancelBrainMotion(true);
++        sArmed = false;
++        sendAck("ARM,0");
++        return;
++    }
++    if (PS4::isManualControlActive()) {
++        sendAck("REJECT,MANUAL");
++        return;
++    }
++    if (robot_modes::anyActive()) {
++        sendAck("REJECT,ROBOTMODE");
++        return;
++    }
++    sArmed = true;
++    sLastHeartbeatMs = now;
++    sendAck("ARM,1");
++}
++
++void applyHead(int xy, int z) {
++    if (!FEATURE_ENABLED(main::use_pwm_board, USE_PWM_BOARD)) {
++        sendAck("REJECT,NO_HEAD");
++        return;
++    }
++    xy = clampInt(xy, 10, 170);
++    z = clampInt(z, 5, 150);
++    pwm_board::posXY = xy;
++    pwm_board::posZ = z;
++    pwm_board::pwm.setPWM(PWM_0, 0, pwm_board::pulseWidth(xy));
++    pwm_board::pwm.setPWM(PWM_1, 0, pwm_board::pulseWidth(z));
++    sendAck("HEAD,OK");
++}
++
++bool forwardIsSafe(uint32_t now) {
++    if (!FEATURE_ENABLED(main::use_distance, USE_DISTANCE)) return false;
++    if (!avoid_objects::cachedDistanceFresh(now, 120)) return false;
++    if (avoid_objects::distanceF < 0.0) return false;
++    const int mm = static_cast<int>(std::lround(avoid_objects::distanceF * 10.0));
++    return mm >= kForwardClearanceMm;
++}
++
++void applyMove(char direction, uint32_t durationMs, uint32_t now) {
++    if (!sArmed) {
++        sendAck("REJECT,DISARMED");
++        return;
++    }
++    if (PS4::isManualControlActive()) {
++        sArmed = false;
++        cancelBrainMotion(false);
++        sendAck("REJECT,MANUAL");
++        return;
++    }
++    if (robot_modes::anyActive()) {
++        sendAck("REJECT,ROBOTMODE");
++        return;
++    }
++
++    durationMs = clampInt(static_cast<int>(durationMs), 50, static_cast<int>(kMaxMoveMs));
++    switch (direction) {
++        case 'F':
++            if (!forwardIsSafe(now)) {
++                Motor::Car_Stop();
++                sendAck("REJECT,SONAR");
++                return;
++            }
++            Motor::Car_creepForward();
++            break;
++        case 'B':
++            digitalWrite(L_ROT, LOW);
++            analogWrite(L_PWM, MOTOR_CREEP_PWM);
++            digitalWrite(R_ROT, HIGH);
++            analogWrite(R_PWM, MOTOR_CREEP_PWM);
++            break;
++        case 'L': Motor::Car_creepLeft(); break;
++        case 'R': Motor::Car_creepRight(); break;
++        default:
++            sendAck("REJECT,DIRECTION");
++            return;
++    }
++    sMoveActive = true;
++    sMoveDeadlineMs = now + durationMs;
++    sendAck("MOVE,OK");
++}
++
++void handleCommand(char* line, uint32_t now) {
++    if (line == nullptr || line[0] != 'B' || line[1] != ',') return;
++    char* save = nullptr;
++    char* token = strtok_r(line + 2, ",", &save);
++    if (token == nullptr) return;
++
++    if (strcmp(token, "HB") == 0) {
++        sLastHeartbeatMs = now;
++        return;
++    }
++    if (strcmp(token, "STOP") == 0) {
++        cancelBrainMotion(false);
++        sArmed = false;
++        Motor::Car_Stop();
++        sendAck("STOP,OK");
++        return;
++    }
++    if (strcmp(token, "ARM") == 0) {
++        char* value = strtok_r(nullptr, ",", &save);
++        setArmed(value != nullptr && atoi(value) != 0, now);
++        return;
++    }
++    if (strcmp(token, "HEAD") == 0) {
++        if (!sArmed || PS4::isManualControlActive() || robot_modes::anyActive()) {
++            sendAck("REJECT,HEAD_LOCK");
++            return;
++        }
++        char* xy = strtok_r(nullptr, ",", &save);
++        char* z = strtok_r(nullptr, ",", &save);
++        if (xy && z) applyHead(atoi(xy), atoi(z));
++        return;
++    }
++    if (strcmp(token, "MOVE") == 0) {
++        char* dir = strtok_r(nullptr, ",", &save);
++        char* duration = strtok_r(nullptr, ",", &save);
++        if (dir && duration && dir[0] != '\0') {
++            applyMove(dir[0], static_cast<uint32_t>(atoi(duration)), now);
++        }
++        return;
++    }
++}
++
++void pollCommands(uint32_t now) {
++    uint8_t byteBudget = 96;
++    while (SERIAL_AT.available() > 0 && byteBudget-- > 0) {
++        const char c = static_cast<char>(SERIAL_AT.read());
++        if (c == '\r') continue;
++        if (c == '\n') {
++            sRxLine[sRxPos] = '\0';
++            if (sRxPos > 0) handleCommand(sRxLine, now);
++            sRxPos = 0;
++            continue;
++        }
++        if (sRxPos < sizeof(sRxLine) - 1) {
++            sRxLine[sRxPos++] = c;
++        } else {
++            sRxPos = 0;
++        }
++    }
++}
++
++void sendTelemetry(uint32_t now) {
++    int distanceMm = -1;
++    if (FEATURE_ENABLED(main::use_distance, USE_DISTANCE)
++        && avoid_objects::cachedDistanceFresh(now, 250)
++        && avoid_objects::distanceF >= 0.0) {
++        distanceMm = static_cast<int>(std::lround(avoid_objects::distanceF * 10.0));
++    }
++
++    const int lightL = FEATURE_ENABLED(main::use_analog, USE_ANALOG) ? analog::ext_analog_0 : 0;
++    const int micL   = FEATURE_ENABLED(main::use_analog, USE_ANALOG) ? analog::ext_analog_1 : 0;
++    const int lightR = FEATURE_ENABLED(main::use_analog, USE_ANALOG) ? analog::ext_analog_2 : 0;
++    const int micR   = FEATURE_ENABLED(main::use_analog, USE_ANALOG) ? analog::ext_analog_3 : 0;
++    const int gx = FEATURE_ENABLED(main::use_gyro, USE_GYRO) ? static_cast<int>(std::lround(gyroscope::gx * 1000.0f)) : 0;
++    const int gy = FEATURE_ENABLED(main::use_gyro, USE_GYRO) ? static_cast<int>(std::lround(gyroscope::gy * 1000.0f)) : 0;
++    const int gz = FEATURE_ENABLED(main::use_gyro, USE_GYRO) ? static_cast<int>(std::lround(gyroscope::gz * 1000.0f)) : 0;
++
++    char line[192];
++    snprintf(line, sizeof(line),
++        "T,%lu,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
++        static_cast<unsigned long>(now), distanceMm,
++        lightL, lightR, micL, micR,
++        gx, gy, gz,
++        pwm_board::posXY, pwm_board::posZ,
++        PS4::isManualControlActive() ? 1 : 0,
++        robot_modes::anyActive() ? 1 : 0,
++        sArmed ? 1 : 0);
++    SERIAL_AT.println(line);
++}
++}
++
++namespace brain_link {
++void begin() {
++    sArmed = false;
++    sMoveActive = false;
++    sLastHeartbeatMs = millis();
++    sLastTelemetryMs = 0;
++    SERIAL_AT.println("RA,HELLO,BRAIN,0.1.0");
++}
++
++void tick(uint32_t now) {
++    pollCommands(now);
++
++    if (PS4::isManualControlActive() && sArmed) {
++        // Manual control always wins. Do not issue a motor STOP here because
++        // that could overwrite the PS4 command that was just applied.
++        sArmed = false;
++        sMoveActive = false;
++        sMoveDeadlineMs = 0;
++        sendAck("DISARM,MANUAL");
++    }
++
++    if (sArmed && static_cast<uint32_t>(now - sLastHeartbeatMs) > kHeartbeatTimeoutMs) {
++        cancelBrainMotion(true);
++        sArmed = false;
++        sendAck("DISARM,HEARTBEAT");
++    }
++
++    if (sMoveActive && deadlineReached(now, sMoveDeadlineMs)) {
++        cancelBrainMotion(true);
++    }
++
++    if (static_cast<uint32_t>(now - sLastTelemetryMs) >= kTelemetryPeriodMs) {
++        sLastTelemetryMs = now;
++        sendTelemetry(now);
++    }
++}
++
++bool isArmed() { return sArmed; }
++}
+diff --git a/src/brain_link.h b/src/brain_link.h
+new file mode 100644
+index 0000000..e423afb
+--- /dev/null
++++ b/src/brain_link.h
+@@ -0,0 +1,12 @@
++#ifndef WALLZ_BRAIN_LINK_H
++#define WALLZ_BRAIN_LINK_H
++
++#include <cstdint>
++
++namespace brain_link {
++void begin();
++void tick(uint32_t now);
++bool isArmed();
++}
++
++#endif // WALLZ_BRAIN_LINK_H
+diff --git a/src/brain_protocol.h b/src/brain_protocol.h
+new file mode 100644
+index 0000000..2828e28
+--- /dev/null
++++ b/src/brain_protocol.h
+@@ -0,0 +1,76 @@
++#ifndef WALLZ_BRAIN_PROTOCOL_H
++#define WALLZ_BRAIN_PROTOCOL_H
++
++#include <cstdint>
++#include <cstdlib>
++#include <cstring>
++
++// Wall-Z Brain v0.1 ASCII protocol over the internal RA4M1 <-> ESP32-S3 UART.
++// RA -> S3 telemetry:
++// T,ms,distance_mm,light_l,light_r,mic_l,mic_r,gx_mrad,gy_mrad,gz_mrad,head_xy,head_z,manual,robot_mode,brain_armed
++//
++// S3 -> RA commands:
++// B,HB
++// B,ARM,0|1
++// B,STOP
++// B,HEAD,xy,z
++// B,MOVE,F|B|L|R,duration_ms
++
++struct BrainTelemetry {
++    uint32_t ms = 0;
++    int distance_mm = -1;
++    int light_l = 0;
++    int light_r = 0;
++    int mic_l = 0;
++    int mic_r = 0;
++    int gyro_x_mrad = 0;
++    int gyro_y_mrad = 0;
++    int gyro_z_mrad = 0;
++    int head_xy = 90;
++    int head_z = 135;
++    int manual = 0;
++    int robot_mode = 0;
++    int brain_armed = 0;
++};
++
++inline bool brainParseInt(const char*& p, long& out) {
++    if (p == nullptr || *p == '\0') return false;
++    char* end = nullptr;
++    out = strtol(p, &end, 10);
++    if (end == p) return false;
++    if (*end == ',') {
++        p = end + 1;
++        return true;
++    }
++    if (*end == '\0' || *end == '\r' || *end == '\n') {
++        p = end;
++        return true;
++    }
++    return false;
++}
++
++inline bool parseBrainTelemetry(const char* line, BrainTelemetry& out) {
++    if (line == nullptr || line[0] != 'T' || line[1] != ',') return false;
++    const char* p = line + 2;
++    long v[14] = {};
++    for (int i = 0; i < 14; ++i) {
++        if (!brainParseInt(p, v[i])) return false;
++    }
++    out.ms = static_cast<uint32_t>(v[0]);
++    out.distance_mm = static_cast<int>(v[1]);
++    out.light_l = static_cast<int>(v[2]);
++    out.light_r = static_cast<int>(v[3]);
++    out.mic_l = static_cast<int>(v[4]);
++    out.mic_r = static_cast<int>(v[5]);
++    out.gyro_x_mrad = static_cast<int>(v[6]);
++    out.gyro_y_mrad = static_cast<int>(v[7]);
++    out.gyro_z_mrad = static_cast<int>(v[8]);
++    out.head_xy = static_cast<int>(v[9]);
++    out.head_z = static_cast<int>(v[10]);
++    out.manual = static_cast<int>(v[11]);
++    out.robot_mode = static_cast<int>(v[12]);
++    out.brain_armed = static_cast<int>(v[13]);
++    return true;
++}
++
++#endif // WALLZ_BRAIN_PROTOCOL_H
+diff --git a/src/config.h b/src/config.h
+index 9ca9807..dbebb10 100644
+--- a/src/config.h
++++ b/src/config.h
+@@ -1,122 +1,123 @@
+-//
+-// Created by mr on 11/13/2023.
+-//
+-
+-#ifndef CONFIG_H
+-#define CONFIG_H
+-
+-/***************************************************************************************************************/
+-// section define
+-/***************************************************************************************************************/
+-#define LOG_VERBOSE 0
+-
+-#define USE_ADAFRUIT 0
+-#define USE_U8G2 0
+-#define SMALL 0
+-#define DISPLAY_DEMO 0
+-#define USE_ROUND 0
+-#define USE_MENU 1
+-#define LOG_DEBUG 1
+-#define USE_PS4 1
+-#define USE_SD_CARD 1
+-#define USE_GYRO 1
+-#define USE_COMPASS 1
+-#define USE_BAROMETER 1
+-#define USE_DISTANCE 1
+-#define USE_I2C_SCANNER 1
+-#define USE_PWM_BOARD 1
+-#define USE_DOT 1
+-#define USE_AUDIO 1
+-#define USE_MIC USE_AUDIO
+-#define USE_SWITCH 0
+-#define USE_ANALOG 1
+-#define USE_LIGHT 1
+-#define USE_ROBOT 1
+-#define USE_TIMERS 1
+-#define USE_MATRIX 1
+-#define USE_MATRIX_PREVIEW 0
+-#define READ_ESP32 0
+-#define USE_LCD 0
+-#define USE_OLED_SENSORS 1
+-
+-#define ARDUINO_ARCH_RENESAS_UNO
+-#define THRESHOLD 2
+-/********************************************** PIN Defines ****************************************************/
+-// section pin define
+-/***************************************************************************************************************/
+-
+-#define STR_HELPER(x) #x
+-#define STR(x) STR_HELPER(x)
+-#define EXT_ANALOG_0 0
+-#define EXT_ANALOG_1 1
+-#define EXT_ANALOG_2 2
+-#define EXT_ANALOG_3 3
+-
+-
+-#define RX_PIN       0
+-#define TX_PIN       1
+-#define LAZER_PIN     11  //pwm11
+-#define DotDataPIN    2 // Set data
+-#define L_PWM   	  3   // define PWM control pin of right motor
+-#define DotClockPIN   4  // Set clock
+-#define Trig_PIN      5  //   ultrasonic trig Pin
+-#define Echo_PIN      6  //   ultrasonic echo Pin
+-#define TFT_DS 	 	  6  //
+-
+-#define R_PWM  		  7  // define PWM control pin of left motor
+-#define L_ROT  		  8  // define the direction control pin of right motor
+-#define R_ROT    	  9  // define the direction control pin of left motor
+-
+-#define TFT_CS 		 10  // CS: Chipselect
+-#define CS_PIN 		 10
+-#define TFT_MOSI	 11  // MOSI: Master Out Slave In SDO, DO, DOUT, SO, MTSR
+-#define TFT_MISO	 12  // MISO: Master In Slave Out SDI, DI, DIN, SI, MRS
+-#define TFT_SCK		 13  // SCLK : SCK, CLK.
+-
+-/* Round GC9A01 Display
+- * CS = 10
+- * DC = Digi 6
+- * SDA = 11
+- * SCL = 13 */
+-
+-// 0 for SdFat/File, 1 for FAT16/FAT32, 2 for exFAT, 3 for FAT16/FAT32 and exFAT.
+-#define SD_FAT_TYPE 1
+-
+-#define SWITCH_8 8
+-#define SWITCH_9 9
+-
+-#define light_L_PIN EXT_ANALOG_0
+-#define MIC_L_PIN   EXT_ANALOG_1
+-#define light_R_PIN EXT_ANALOG_2
+-#define MIC_R_PIN   EXT_ANALOG_3
+-
+-#define top  0 // lcd screen top line
+-#define bot  1 // lcd screen bottom line
+-
+-#define DPAD_U   1100
+-#define DPAD_R   1200
+-#define DPAD_D   1300
+-#define DPAD_L   1400
+-#define SQUARE   3100
+-#define xCROSS   3200
+-#define CIRCLE   3300
+-#define TRIANG   3400
+-#define OPTION   2900
+-#define xSHARE   2800
+-#define PSHOME   2500
+-#define L1       2100
+-#define L3       2300
+-#define R1       2200
+-#define R3       2400
+-#define TOUCHPD  2700
+-#define MIC      3700
+-#define CHARGING 3500
+-#define XAUDIO   3600
+-#define URIGHT   1500
+-#define DRIGHT   1600
+-#define D_LEFT   1700
+-#define UPLEFT   1800
+-
+-#define FPS 30
+-
+-#endif //CONFIG_H
++//
++// Created by mr on 11/13/2023.
++//
++
++#ifndef CONFIG_H
++#define CONFIG_H
++
++/***************************************************************************************************************/
++// section define
++/***************************************************************************************************************/
++#define LOG_VERBOSE 0
++
++#define USE_ADAFRUIT 0
++#define USE_U8G2 0
++#define SMALL 0
++#define DISPLAY_DEMO 0
++#define USE_ROUND 0
++#define USE_MENU 1
++#define LOG_DEBUG 1
++#define USE_PS4 1
++#define USE_SD_CARD 1
++#define USE_GYRO 1
++#define USE_COMPASS 1
++#define USE_BAROMETER 1
++#define USE_DISTANCE 1
++#define USE_I2C_SCANNER 1
++#define USE_PWM_BOARD 1
++#define USE_DOT 1
++#define USE_AUDIO 1
++#define USE_MIC USE_AUDIO
++#define USE_SWITCH 0
++#define USE_ANALOG 1
++#define USE_LIGHT 1
++#define USE_ROBOT 1
++#define USE_TIMERS 1
++#define USE_MATRIX 1
++#define USE_MATRIX_PREVIEW 0
++#define READ_ESP32 0
++#define USE_BRAIN_LINK 1
++#define USE_LCD 0
++#define USE_OLED_SENSORS 1
++
++#define ARDUINO_ARCH_RENESAS_UNO
++#define THRESHOLD 2
++/********************************************** PIN Defines ****************************************************/
++// section pin define
++/***************************************************************************************************************/
++
++#define STR_HELPER(x) #x
++#define STR(x) STR_HELPER(x)
++#define EXT_ANALOG_0 0
++#define EXT_ANALOG_1 1
++#define EXT_ANALOG_2 2
++#define EXT_ANALOG_3 3
++
++
++#define RX_PIN       0
++#define TX_PIN       1
++#define LAZER_PIN     11  //pwm11
++#define DotDataPIN    2 // Set data
++#define L_PWM   	  3   // define PWM control pin of right motor
++#define DotClockPIN   4  // Set clock
++#define Trig_PIN      5  //   ultrasonic trig Pin
++#define Echo_PIN      6  //   ultrasonic echo Pin
++#define TFT_DS 	 	  6  //
++
++#define R_PWM  		  7  // define PWM control pin of left motor
++#define L_ROT  		  8  // define the direction control pin of right motor
++#define R_ROT    	  9  // define the direction control pin of left motor
++
++#define TFT_CS 		 10  // CS: Chipselect
++#define CS_PIN 		 10
++#define TFT_MOSI	 11  // MOSI: Master Out Slave In SDO, DO, DOUT, SO, MTSR
++#define TFT_MISO	 12  // MISO: Master In Slave Out SDI, DI, DIN, SI, MRS
++#define TFT_SCK		 13  // SCLK : SCK, CLK.
++
++/* Round GC9A01 Display
++ * CS = 10
++ * DC = Digi 6
++ * SDA = 11
++ * SCL = 13 */
++
++// 0 for SdFat/File, 1 for FAT16/FAT32, 2 for exFAT, 3 for FAT16/FAT32 and exFAT.
++#define SD_FAT_TYPE 1
++
++#define SWITCH_8 8
++#define SWITCH_9 9
++
++#define light_L_PIN EXT_ANALOG_0
++#define MIC_L_PIN   EXT_ANALOG_1
++#define light_R_PIN EXT_ANALOG_2
++#define MIC_R_PIN   EXT_ANALOG_3
++
++#define top  0 // lcd screen top line
++#define bot  1 // lcd screen bottom line
++
++#define DPAD_U   1100
++#define DPAD_R   1200
++#define DPAD_D   1300
++#define DPAD_L   1400
++#define SQUARE   3100
++#define xCROSS   3200
++#define CIRCLE   3300
++#define TRIANG   3400
++#define OPTION   2900
++#define xSHARE   2800
++#define PSHOME   2500
++#define L1       2100
++#define L3       2300
++#define R1       2200
++#define R3       2400
++#define TOUCHPD  2700
++#define MIC      3700
++#define CHARGING 3500
++#define XAUDIO   3600
++#define URIGHT   1500
++#define DRIGHT   1600
++#define D_LEFT   1700
++#define UPLEFT   1800
++
++#define FPS 30
++
++#endif //CONFIG_H
+diff --git a/src/main_ra.cpp b/src/main_ra.cpp
+index c5eb961..3ed8cc7 100644
+--- a/src/main_ra.cpp
++++ b/src/main_ra.cpp
+@@ -1,494 +1,508 @@
+-/*
+-UNO BLE -->     DC:54:75:C3:D9:ED   -
+-PC USB Dongel   00:1F:E2:C8:82:BA
+-ESP 1           66:CB:3E:E9:02:8A
+-ESP small cam   3C:E9:0E:88:65:16
+-PS4 Controller: A4:AE:11:E1:8B:B3 (SONYWA) GooglyEyes
+-PS5 Controller: 88:03:4C:B5:00:66
+-USB-Shield BT   00:1a:7d:da:71:13
+-				00:1a:7d:da:71:13
+-*/
+-
+-
+-/***************************************************************************************************************/
+-// section include
+-/***************************************************************************************************************/
+-#include <Arduino.h>
+-#include <Wire.h>
+-#include <SPI.h>
+-
+-
+-
+-#include <wiring_private.h>
+-#include <cstring>
+-#include <cstdint>
+-#include <cmath>
+-
+-#include <Adafruit_Sensor.h>
+-#include "Arduino_LED_Matrix.h"
+-
+-#include "PS4.h"
+-#include "secrets.h"
+-#include "main_ra.h"
+-#include "menu.h"
+-
+-#include "logger.h"
+-#include "barometer.h"
+-#include "animation.h"
+-#include "pwm_board.h"
+-#include "timers.h"
+-#include "compass.h"
+-#include "gyroscope.h"
+-
+-#include "dancing.h"
+-#include "displayAdafruit.h"
+-#include "pesto_matrix.h"
+-#include "follow_light.h"
+-#include "motor.h"
+-#include "MicStereo.h"
+-#include "avoid_objects.h"
+-#include "I2Cscanner.h"
+-
+-#include "analog.h"
+-#include "SD_card.h"
+-#include "deadline.h"
+-#include "sense_react.h"
+-#include "robot_modes.h"
+-#include "laser_beam.h"
+-#include "radar_scan.h"
+-
+-bool main::Found_Display = false;
+-bool main::Found_Gyro = false;
+-bool main::Found_Compass = false;
+-bool main::Found_Mics = false;
+-bool main::Found_PwmBoard = false;
+-bool main::Found_Switch = false;
+-bool main::Found_Sonar = false;
+-
+-bool main::use_adafruit = false;
+-bool main::use_u8g2 = false;
+-bool main::small = false;
+-bool main::display_demo = false;
+-bool main::use_round = false;
+-bool main::use_menu = false;
+-bool main::log_debug = false;
+-bool main::use_ps4 = false;
+-bool main::use_sd_card = false;
+-bool main::use_gyro = false;
+-bool main::use_compass = false;
+-bool main::use_barometer = false;
+-bool main::use_distance = false;
+-bool main::use_i2c_scanner = false;
+-bool main::use_pwm_board = false;
+-bool main::use_dot = false;
+-bool main::use_audio = false;
+-bool main::use_switch = false;
+-bool main::use_analog = false;
+-bool main::use_light = false;
+-bool main::use_robot = false;
+-bool main::use_timers = true;
+-bool main::use_matrix = true;
+-bool main::use_matrix_preview = false;
+-bool main::read_esp32 = false;
+-bool main::use_lcd = false;
+-bool main::use_oled_sensors = false;
+-
+-//int timers::timerButton;
+-
+-int pwm_board::posXY = 90;  // set horizontal servo position
+-int pwm_board::posZ = 135;   // set vertical servo position
+-
+-int Switch_8_State, Switch_9_State;
+-
+-// Define an array to hold pixel data for a single frame (4 pixels)
+-uint32_t frame[] = {0, 0, 0, 0xFFFF};
+-ArduinoLEDMatrix matrix;
+-
+-
+-/********************************************** Setup booting the arduino **************************************/
+-// section Setup
+-/***************************************************************************************************************/
+-void setup(){
+-    Wire.begin();
+-	Serial.begin(9600);// Initialize the hardware serial port for debugging
+-	displayAdafruit::setupAdafruit();
+-
+-	logger::logln("Wall-Z boot");
+-
+-	delay(1);
+-	Serial1.begin(115200);
+-	delay(1);
+-	SERIAL_AT.begin(115200);
+-	logger::logln("UART 9600/115200");
+-	delay(1);
+-
+-	Motor::motor_setup();
+-
+-	SD_card::initSD();
+-
+-	if(main::use_sd_card) {
+-		if(main::use_i2c_scanner)	I2Cscanner::scan();
+-		delay(500);
+-		if(main::use_analog) {
+-			analog::analogSetup();
+-
+-			if(main::use_audio) {
+-				MicStereo::MicSetup();
+-				delay(500);
+-			}
+-		}
+-
+-		if(main::use_switch) {
+-			pinMode(8, INPUT_PULLUP);     /***** 8 ******/
+-			pinMode(9, INPUT_PULLUP);     /***** 9 ******/
+-
+-			delay(50);
+-			Switch_8_State = digitalRead(8);
+-			Switch_9_State = digitalRead(9);
+-
+-			if (Switch_8_State == LOW) { logger::log(" SWITCH_8 is on"); } else { logger::log(" SWITCH_8 is off"); }
+-			if (Switch_9_State == LOW) { logger::logln(" SWITCH_9 is on"); } else { logger::logln(" SWITCH_9 is off"); }
+-
+-			delay(500);
+-		}
+-
+-		if(main::use_pwm_board) { pwm_board::setupPWM();   logger::logln("PWM ok");}
+-		delay(500);
+-		if(main::use_matrix_preview) {
+-			matrix.begin();
+-		} else if(main::use_matrix) {
+-			matrix.loadSequence(animation);
+-			matrix.begin();
+-			matrix.autoscroll(300);
+-			matrix.play(true);
+-			delay(500);
+-			logger::logln(" R4 matrix ");
+-		}
+-
+-
+-		if(main::use_distance) {
+-			pinMode(Trig_PIN, OUTPUT);    /***** 6 ******/
+-			pinMode(Echo_PIN, INPUT);     /***** 7 ******/
+-			logger::logln("Sonar ok");
+-			delay(500);
+-		}
+-
+-		if(main::use_dot) {
+-			Pesto::setup_pestoMatrix();
+-			delay(500);
+-		}
+-
+-		if(main::use_gyro) {
+-			gyroscope::gyroSetup();
+-			delay(500);
+-		}
+-
+-		if(main::use_compass) {
+-			compass::compassSetup();
+-			delay(500);
+-		}
+-
+-		if(main::use_barometer) {
+-			barometer::baroSetup();
+-			delay(500);
+-		}
+-
+-		if(main::use_timers) {
+-			timers::initTimers();
+-			delay(500);
+-
+-        }
+-		logger::logln("Setup SD done");
+-	} else {
+-		logger::logln("Setup from config.h");
+-		#if USE_ROUND
+-			displayMenu::menuSetup();
+-		#endif
+-
+-		#if USE_I2C_SCANNER
+-			I2Cscanner::scan();
+-			delay(500);
+-		#endif
+-
+-		#if USE_ANALOG
+-			analog::analogSetup();
+-		#endif
+-
+-		#if USE_AUDIO
+-			MicStereo::MicSetup();
+-			delay(500);
+-		#endif
+-
+-		#if USE_SWITCH
+-			pinMode(SWITCH_8, INPUT_PULLUP);     /***** 8 ******/
+-			pinMode(SWITCH_9, INPUT_PULLUP);     /***** 9 ******/
+-
+-			delay(50);
+-			Switch_8_State = digitalRead(SWITCH_8);
+-			Switch_9_State = digitalRead(SWITCH_9);
+-
+-			if (Switch_8_State == LOW) {  logger::log(" SWITCH_8 is on");} else {logger::log(" SWITCH_8 is off");}
+-			if (Switch_9_State == LOW) {  logger::logln(" SWITCH_9 is on");} else {logger::logln(" SWITCH_9 is off");}
+-
+-			delay(500);
+-		#endif
+-
+-		#if USE_PWM_BOARD
+-			pwm_board::setupPWM();
+-			delay(500);
+-		#endif
+-
+-
+-		#if USE_MATRIX_PREVIEW
+-			matrix.begin();
+-		#elif USE_MATRIX
+-			matrix.loadSequence(animation);
+-			matrix.begin();
+-			matrix.autoscroll(300);
+-			matrix.play(true);
+-			delay(500);
+-			logger::log(" R4 matrix ");
+-		#endif
+-
+-		#if USE_DISTANCE
+-			pinMode(Trig_PIN, OUTPUT);    /***** 6 ******/
+-			pinMode(Echo_PIN, INPUT);     /***** 7 ******/
+-			logger::log(" Sonar ");
+-			delay(500);
+-		#endif
+-
+-		#if USE_DOT
+-			Pesto::setup_pestoMatrix();
+-			delay(500);
+-		#endif
+-
+-		#if USE_COMPASS
+-			compass::compassSetup();
+-			delay(500);
+-		#endif
+-
+-		#if USE_BAROMETER
+-			barometer::baroSetup();
+-			delay(500);
+-		#endif
+-
+-		#if USE_GYRO
+-			gyroscope::gyroSetup();
+-			delay(500);
+-		#endif
+-
+-		#if USE_TIMERS
+-			timers::initTimers();
+-			delay(500);
+-
+-		//        general_timer::setup_General_Timer();
+-		//        delay(500);
+-		#endif
+-
+-		logger::logln("Setup from config.h Complete");
+-	}
+-	logger::logln("Starting loop");
+-	logger::endBootLog();
+-}
+-
+-/*********************************** Loop **********************************/
+-// section Loop
+-/***************************************************************************/
+-
+-void loop(){
+-	const uint32_t now = millis();
+-
+-	auto pollPs4 = []() {
+-		if (FEATURE_ENABLED(main::use_ps4, USE_PS4)) {
+-			PS4::pollInput();
+-		}
+-	};
+-
+-	pollPs4();
+-
+-	#if USE_ROBOT
+-	auto tickRobotModes = [&]() {
+-		if (main::use_sd_card && !main::use_robot) {
+-			return;
+-		}
+-		if (radar_scan::isActive()) {
+-			radar_scan::tick();
+-			pollPs4();
+-			return;
+-		}
+-		if (avoid_objects::isActive()) {
+-			avoid_objects::tick();
+-		}
+-		pollPs4();
+-		if (Follow_light::isActive()) {
+-			Follow_light::tick();
+-		}
+-		pollPs4();
+-		if (dancing::isActive()) {
+-			dancing::tick();
+-		}
+-		pollPs4();
+-		if (sense_react::isActive()) {
+-			sense_react::tick();
+-		}
+-	};
+-	if (main::use_sd_card) {
+-		if (main::use_robot) {
+-			tickRobotModes();
+-		}
+-	} else {
+-		tickRobotModes();
+-	}
+-	#endif
+-
+-	displayAdafruit::displayLoop();
+-
+-	if (main::use_menu) {
+-		menu::loopMenu();
+-	}
+-
+-	pollPs4();
+-
+-	if (FEATURE_ENABLED(main::use_switch, USE_SWITCH)) {
+-		Switch_8_State = digitalRead(SWITCH_8);
+-		Switch_9_State = digitalRead(SWITCH_9);
+-	}
+-
+-	static uint32_t lastAnalogMs = 0;
+-	if (FEATURE_ENABLED(main::use_analog, USE_ANALOG)) {
+-		if (elapsed(now, lastAnalogMs, 20)) {
+-			analog::analogLoop();
+-		}
+-	}
+-
+-	static uint32_t lastGyroMs = 0;
+-	if (FEATURE_ENABLED(main::use_gyro, USE_GYRO) || main::Found_Gyro) {
+-		if (elapsed(now, lastGyroMs, 50)) {
+-			gyroscope::gyroDetectMovement();
+-		}
+-	}
+-
+-	if (main::use_sd_card) {
+-		if (main::use_audio) {
+-			MicStereo::MicLoop();
+-		}
+-	} else {
+-		#if USE_AUDIO
+-			MicStereo::MicLoop();
+-		#endif
+-	}
+-
+-	if (FEATURE_ENABLED(main::use_distance, USE_DISTANCE)) {
+-		static uint32_t lastSonarMs = 0;
+-		if (elapsed(now, lastSonarMs, 60)) {
+-			int distance = std::lround(avoid_objects::checkDistance());
+-
+-			#if LOG_VERBOSE
+-				if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
+-					logger::log("Distance: ");
+-					logger::logIntln(distance);
+-				}
+-			#endif
+-
+-			int lazer_brightness = map(distance, 0, 1000, 0, 4000);
+-			lazer_brightness = laser_beam::pwmForDistance(lazer_brightness);
+-			if (FEATURE_ENABLED(main::use_pwm_board, USE_PWM_BOARD)) {
+-				pwm_board::pwm.setPWM(LAZER_PIN, 0, lazer_brightness);
+-				if (!robot_modes::anyActive()) {
+-					if (distance >= 0 && distance < 35) {
+-						pwm_board::leftLedStrip(255, 0, 0);
+-						pwm_board::rightLedStrip(255, 0, 0);
+-					} else {
+-						pwm_board::leftLedStrip(70, 0, 70);
+-						pwm_board::rightLedStrip(70, 0, 70);
+-					}
+-				}
+-			}
+-		}
+-	} else if (FEATURE_ENABLED(main::use_pwm_board, USE_PWM_BOARD)) {
+-		static uint32_t lastIdleLedMs = 0;
+-		if (!robot_modes::anyActive() && elapsed(now, lastIdleLedMs, 200)) {
+-			lastIdleLedMs = now;
+-			pwm_board::leftLedStrip(0, 0, 70);
+-			pwm_board::rightLedStrip(0, 0, 70);
+-		}
+-	}
+-
+-	pollPs4();
+-
+-	const bool pestoOledSync = sense_react::isActive() || avoid_objects::isActive();
+-	if (main::use_sd_card) {
+-		if (main::use_dot && !main::use_timers && !pestoOledSync) {
+-			Pesto::pestoMatrix();
+-		}
+-	} else {
+-		#if USE_DOT && !USE_TIMERS
+-			if (!pestoOledSync) {
+-				Pesto::pestoMatrix();
+-			}
+-		#endif
+-	}
+-
+-	if (main::use_sd_card) {
+-		if (main::use_timers) {
+-			timers::update();
+-		}
+-	} else {
+-		#if USE_TIMERS
+-			timers::update();
+-		#endif
+-	}
+-
+-	if (main::use_sd_card) {
+-		if (main::read_esp32) {
+-			if (SERIAL_AT.available()) {
+-				#if LOG_VERBOSE
+-					if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
+-						logger::log("ESP32 says: ");
+-					}
+-				#endif
+-				while (SERIAL_AT.available()) {
+-					Serial.write(SERIAL_AT.read());
+-				}
+-			}
+-		}
+-	} else {
+-		#if READ_ESP32
+-			if (SERIAL_AT.available()) {
+-				#if LOG_VERBOSE
+-					if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
+-						logger::log("ESP32 says: ");
+-					}
+-				#endif
+-				while (SERIAL_AT.available()) {
+-					Serial.write(SERIAL_AT.read());
+-				}
+-			}
+-		#endif
+-	}
+-
+-	#if USE_MATRIX_PREVIEW
+-	if (main::use_sd_card) {
+-		if (main::use_matrix_preview) {
+-			if(Serial.available() >= 12){
+-				frame[0] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+-				frame[1] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+-				frame[2] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+-				matrix.loadFrame(frame);
+-			}
+-		}
+-	} else {
+-		if(Serial.available() >= 12){
+-			frame[0] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+-			frame[1] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+-			frame[2] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
+-			matrix.loadFrame(frame);
+-		}
+-	}
+-	#endif
+-
+-	pollPs4();
+-}
+-
+-
+-
++/*
++UNO BLE -->     DC:54:75:C3:D9:ED   -
++PC USB Dongel   00:1F:E2:C8:82:BA
++ESP 1           66:CB:3E:E9:02:8A
++ESP small cam   3C:E9:0E:88:65:16
++PS4 Controller: A4:AE:11:E1:8B:B3 (SONYWA) GooglyEyes
++PS5 Controller: 88:03:4C:B5:00:66
++USB-Shield BT   00:1a:7d:da:71:13
++				00:1a:7d:da:71:13
++*/
++
++
++/***************************************************************************************************************/
++// section include
++/***************************************************************************************************************/
++#include <Arduino.h>
++#include <Wire.h>
++#include <SPI.h>
++
++
++
++#include <wiring_private.h>
++#include <cstring>
++#include <cstdint>
++#include <cmath>
++
++#include <Adafruit_Sensor.h>
++#include "Arduino_LED_Matrix.h"
++
++#include "PS4.h"
++#include "secrets.h"
++#include "main_ra.h"
++#include "menu.h"
++
++#include "logger.h"
++#include "barometer.h"
++#include "animation.h"
++#include "pwm_board.h"
++#include "timers.h"
++#include "compass.h"
++#include "gyroscope.h"
++
++#include "dancing.h"
++#include "displayAdafruit.h"
++#include "pesto_matrix.h"
++#include "follow_light.h"
++#include "motor.h"
++#include "MicStereo.h"
++#include "avoid_objects.h"
++#include "I2Cscanner.h"
++
++#include "analog.h"
++#include "SD_card.h"
++#include "deadline.h"
++#include "sense_react.h"
++#include "robot_modes.h"
++#include "laser_beam.h"
++#include "radar_scan.h"
++#include "brain_link.h"
++
++bool main::Found_Display = false;
++bool main::Found_Gyro = false;
++bool main::Found_Compass = false;
++bool main::Found_Mics = false;
++bool main::Found_PwmBoard = false;
++bool main::Found_Switch = false;
++bool main::Found_Sonar = false;
++
++bool main::use_adafruit = false;
++bool main::use_u8g2 = false;
++bool main::small = false;
++bool main::display_demo = false;
++bool main::use_round = false;
++bool main::use_menu = false;
++bool main::log_debug = false;
++bool main::use_ps4 = false;
++bool main::use_sd_card = false;
++bool main::use_gyro = false;
++bool main::use_compass = false;
++bool main::use_barometer = false;
++bool main::use_distance = false;
++bool main::use_i2c_scanner = false;
++bool main::use_pwm_board = false;
++bool main::use_dot = false;
++bool main::use_audio = false;
++bool main::use_switch = false;
++bool main::use_analog = false;
++bool main::use_light = false;
++bool main::use_robot = false;
++bool main::use_timers = true;
++bool main::use_matrix = true;
++bool main::use_matrix_preview = false;
++bool main::read_esp32 = false;
++bool main::use_lcd = false;
++bool main::use_oled_sensors = false;
++
++//int timers::timerButton;
++
++int pwm_board::posXY = 90;  // set horizontal servo position
++int pwm_board::posZ = 135;   // set vertical servo position
++
++int Switch_8_State, Switch_9_State;
++
++// Define an array to hold pixel data for a single frame (4 pixels)
++uint32_t frame[] = {0, 0, 0, 0xFFFF};
++ArduinoLEDMatrix matrix;
++
++
++/********************************************** Setup booting the arduino **************************************/
++// section Setup
++/***************************************************************************************************************/
++void setup(){
++    Wire.begin();
++	Serial.begin(9600);// Initialize the hardware serial port for debugging
++	displayAdafruit::setupAdafruit();
++
++	logger::logln("Wall-Z boot");
++
++	delay(1);
++	Serial1.begin(115200);
++	delay(1);
++	SERIAL_AT.begin(115200);
++	#if USE_BRAIN_LINK
++	brain_link::begin();
++	#endif
++	logger::logln("UART 9600/115200 + Brain link");
++	delay(1);
++
++	Motor::motor_setup();
++
++	SD_card::initSD();
++
++	if(main::use_sd_card) {
++		if(main::use_i2c_scanner)	I2Cscanner::scan();
++		delay(500);
++		if(main::use_analog) {
++			analog::analogSetup();
++
++			if(main::use_audio) {
++				MicStereo::MicSetup();
++				delay(500);
++			}
++		}
++
++		if(main::use_switch) {
++			pinMode(8, INPUT_PULLUP);     /***** 8 ******/
++			pinMode(9, INPUT_PULLUP);     /***** 9 ******/
++
++			delay(50);
++			Switch_8_State = digitalRead(8);
++			Switch_9_State = digitalRead(9);
++
++			if (Switch_8_State == LOW) { logger::log(" SWITCH_8 is on"); } else { logger::log(" SWITCH_8 is off"); }
++			if (Switch_9_State == LOW) { logger::logln(" SWITCH_9 is on"); } else { logger::logln(" SWITCH_9 is off"); }
++
++			delay(500);
++		}
++
++		if(main::use_pwm_board) { pwm_board::setupPWM();   logger::logln("PWM ok");}
++		delay(500);
++		if(main::use_matrix_preview) {
++			matrix.begin();
++		} else if(main::use_matrix) {
++			matrix.loadSequence(animation);
++			matrix.begin();
++			matrix.autoscroll(300);
++			matrix.play(true);
++			delay(500);
++			logger::logln(" R4 matrix ");
++		}
++
++
++		if(main::use_distance) {
++			pinMode(Trig_PIN, OUTPUT);    /***** 6 ******/
++			pinMode(Echo_PIN, INPUT);     /***** 7 ******/
++			logger::logln("Sonar ok");
++			delay(500);
++		}
++
++		if(main::use_dot) {
++			Pesto::setup_pestoMatrix();
++			delay(500);
++		}
++
++		if(main::use_gyro) {
++			gyroscope::gyroSetup();
++			delay(500);
++		}
++
++		if(main::use_compass) {
++			compass::compassSetup();
++			delay(500);
++		}
++
++		if(main::use_barometer) {
++			barometer::baroSetup();
++			delay(500);
++		}
++
++		if(main::use_timers) {
++			timers::initTimers();
++			delay(500);
++
++        }
++		logger::logln("Setup SD done");
++	} else {
++		logger::logln("Setup from config.h");
++		#if USE_ROUND
++			displayMenu::menuSetup();
++		#endif
++
++		#if USE_I2C_SCANNER
++			I2Cscanner::scan();
++			delay(500);
++		#endif
++
++		#if USE_ANALOG
++			analog::analogSetup();
++		#endif
++
++		#if USE_AUDIO
++			MicStereo::MicSetup();
++			delay(500);
++		#endif
++
++		#if USE_SWITCH
++			pinMode(SWITCH_8, INPUT_PULLUP);     /***** 8 ******/
++			pinMode(SWITCH_9, INPUT_PULLUP);     /***** 9 ******/
++
++			delay(50);
++			Switch_8_State = digitalRead(SWITCH_8);
++			Switch_9_State = digitalRead(SWITCH_9);
++
++			if (Switch_8_State == LOW) {  logger::log(" SWITCH_8 is on");} else {logger::log(" SWITCH_8 is off");}
++			if (Switch_9_State == LOW) {  logger::logln(" SWITCH_9 is on");} else {logger::logln(" SWITCH_9 is off");}
++
++			delay(500);
++		#endif
++
++		#if USE_PWM_BOARD
++			pwm_board::setupPWM();
++			delay(500);
++		#endif
++
++
++		#if USE_MATRIX_PREVIEW
++			matrix.begin();
++		#elif USE_MATRIX
++			matrix.loadSequence(animation);
++			matrix.begin();
++			matrix.autoscroll(300);
++			matrix.play(true);
++			delay(500);
++			logger::log(" R4 matrix ");
++		#endif
++
++		#if USE_DISTANCE
++			pinMode(Trig_PIN, OUTPUT);    /***** 6 ******/
++			pinMode(Echo_PIN, INPUT);     /***** 7 ******/
++			logger::log(" Sonar ");
++			delay(500);
++		#endif
++
++		#if USE_DOT
++			Pesto::setup_pestoMatrix();
++			delay(500);
++		#endif
++
++		#if USE_COMPASS
++			compass::compassSetup();
++			delay(500);
++		#endif
++
++		#if USE_BAROMETER
++			barometer::baroSetup();
++			delay(500);
++		#endif
++
++		#if USE_GYRO
++			gyroscope::gyroSetup();
++			delay(500);
++		#endif
++
++		#if USE_TIMERS
++			timers::initTimers();
++			delay(500);
++
++		//        general_timer::setup_General_Timer();
++		//        delay(500);
++		#endif
++
++		logger::logln("Setup from config.h Complete");
++	}
++	logger::logln("Starting loop");
++	logger::endBootLog();
++}
++
++/*********************************** Loop **********************************/
++// section Loop
++/***************************************************************************/
++
++void loop(){
++	const uint32_t now = millis();
++
++	auto pollPs4 = []() {
++		if (FEATURE_ENABLED(main::use_ps4, USE_PS4)) {
++			PS4::pollInput();
++		}
++	};
++
++	pollPs4();
++
++	#if USE_BRAIN_LINK
++	brain_link::tick(now);
++	#endif
++
++	#if USE_ROBOT
++	auto tickRobotModes = [&]() {
++		if (main::use_sd_card && !main::use_robot) {
++			return;
++		}
++		if (radar_scan::isActive()) {
++			radar_scan::tick();
++			pollPs4();
++			return;
++		}
++		if (avoid_objects::isActive()) {
++			avoid_objects::tick();
++		}
++		pollPs4();
++		if (Follow_light::isActive()) {
++			Follow_light::tick();
++		}
++		pollPs4();
++		if (dancing::isActive()) {
++			dancing::tick();
++		}
++		pollPs4();
++		if (sense_react::isActive()) {
++			sense_react::tick();
++		}
++	};
++	if (main::use_sd_card) {
++		if (main::use_robot) {
++			tickRobotModes();
++		}
++	} else {
++		tickRobotModes();
++	}
++	#endif
++
++	displayAdafruit::displayLoop();
++
++	if (main::use_menu) {
++		menu::loopMenu();
++	}
++
++	pollPs4();
++
++	if (FEATURE_ENABLED(main::use_switch, USE_SWITCH)) {
++		Switch_8_State = digitalRead(SWITCH_8);
++		Switch_9_State = digitalRead(SWITCH_9);
++	}
++
++	static uint32_t lastAnalogMs = 0;
++	if (FEATURE_ENABLED(main::use_analog, USE_ANALOG)) {
++		if (elapsed(now, lastAnalogMs, 20)) {
++			analog::analogLoop();
++		}
++	}
++
++	static uint32_t lastGyroMs = 0;
++	if (FEATURE_ENABLED(main::use_gyro, USE_GYRO) || main::Found_Gyro) {
++		if (elapsed(now, lastGyroMs, 50)) {
++			gyroscope::gyroDetectMovement();
++		}
++	}
++
++	if (main::use_sd_card) {
++		if (main::use_audio) {
++			MicStereo::MicLoop();
++		}
++	} else {
++		#if USE_AUDIO
++			MicStereo::MicLoop();
++		#endif
++	}
++
++	if (FEATURE_ENABLED(main::use_distance, USE_DISTANCE)) {
++		static uint32_t lastSonarMs = 0;
++		if (elapsed(now, lastSonarMs, 60)) {
++			int distance = std::lround(avoid_objects::checkDistance());
++
++			#if LOG_VERBOSE
++				if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
++					logger::log("Distance: ");
++					logger::logIntln(distance);
++				}
++			#endif
++
++			int lazer_brightness = map(distance, 0, 1000, 0, 4000);
++			lazer_brightness = laser_beam::pwmForDistance(lazer_brightness);
++			if (FEATURE_ENABLED(main::use_pwm_board, USE_PWM_BOARD)) {
++				pwm_board::pwm.setPWM(LAZER_PIN, 0, lazer_brightness);
++				if (!robot_modes::anyActive()) {
++					if (distance >= 0 && distance < 35) {
++						pwm_board::leftLedStrip(255, 0, 0);
++						pwm_board::rightLedStrip(255, 0, 0);
++					} else {
++						pwm_board::leftLedStrip(70, 0, 70);
++						pwm_board::rightLedStrip(70, 0, 70);
++					}
++				}
++			}
++		}
++	} else if (FEATURE_ENABLED(main::use_pwm_board, USE_PWM_BOARD)) {
++		static uint32_t lastIdleLedMs = 0;
++		if (!robot_modes::anyActive() && elapsed(now, lastIdleLedMs, 200)) {
++			lastIdleLedMs = now;
++			pwm_board::leftLedStrip(0, 0, 70);
++			pwm_board::rightLedStrip(0, 0, 70);
++		}
++	}
++
++	pollPs4();
++
++	const bool pestoOledSync = sense_react::isActive() || avoid_objects::isActive();
++	if (main::use_sd_card) {
++		if (main::use_dot && !main::use_timers && !pestoOledSync) {
++			Pesto::pestoMatrix();
++		}
++	} else {
++		#if USE_DOT && !USE_TIMERS
++			if (!pestoOledSync) {
++				Pesto::pestoMatrix();
++			}
++		#endif
++	}
++
++	if (main::use_sd_card) {
++		if (main::use_timers) {
++			timers::update();
++		}
++	} else {
++		#if USE_TIMERS
++			timers::update();
++		#endif
++	}
++
++	#if !USE_BRAIN_LINK
++	if (main::use_sd_card) {
++		if (main::read_esp32) {
++			if (SERIAL_AT.available()) {
++				#if LOG_VERBOSE
++					if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
++						logger::log("ESP32 says: ");
++					}
++				#endif
++				while (SERIAL_AT.available()) {
++					Serial.write(SERIAL_AT.read());
++				}
++			}
++		}
++	} else {
++		#if READ_ESP32
++			if (SERIAL_AT.available()) {
++				#if LOG_VERBOSE
++					if (FEATURE_ENABLED(main::log_debug, LOG_DEBUG)) {
++						logger::log("ESP32 says: ");
++					}
++				#endif
++				while (SERIAL_AT.available()) {
++					Serial.write(SERIAL_AT.read());
++				}
++			}
++		#endif
++	}
++
++	#endif
++
++	#if USE_MATRIX_PREVIEW
++	if (main::use_sd_card) {
++		if (main::use_matrix_preview) {
++			if(Serial.available() >= 12){
++				frame[0] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
++				frame[1] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
++				frame[2] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
++				matrix.loadFrame(frame);
++			}
++		}
++	} else {
++		if(Serial.available() >= 12){
++			frame[0] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
++			frame[1] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
++			frame[2] = Serial.read() | Serial.read() << 8 | Serial.read() << 16 | Serial.read() << 24;
++			matrix.loadFrame(frame);
++		}
++	}
++	#endif
++
++	pollPs4();
++	#if USE_BRAIN_LINK
++	brain_link::tick(millis());
++	#endif
++}
++
++
++
+diff --git a/src_esp32_r4/brain_core.h b/src_esp32_r4/brain_core.h
+new file mode 100644
+index 0000000..a41caaa
+--- /dev/null
++++ b/src_esp32_r4/brain_core.h
+@@ -0,0 +1,254 @@
++#ifndef WALLZ_BRAIN_CORE_H
++#define WALLZ_BRAIN_CORE_H
++
++#include <cmath>
++#include <cstdint>
++#include <cstring>
++
++#include "brain_protocol.h"
++
++enum class BrainContext : uint8_t {
++    Calm = 0,
++    Obstacle = 1,
++    LightLeft = 2,
++    LightRight = 3,
++    SoundEvent = 4,
++    MotionEvent = 5,
++    Count = 6
++};
++
++enum class BrainAction : uint8_t {
++    Idle = 0,
++    Stop = 1,
++    LookLeft = 2,
++    LookRight = 3,
++    CreepForward = 4,
++    TurnLeft = 5,
++    TurnRight = 6,
++    Count = 7
++};
++
++struct BrainMetrics {
++    float novelty = 0.0f;
++    float curiosity = 0.35f;
++    float arousal = 0.15f;
++    float confidence = 0.25f;
++    float valence = 0.0f;
++    uint32_t observations = 0;
++    uint32_t rewards = 0;
++    uint32_t actions = 0;
++};
++
++struct BrainPersist {
++    uint32_t magic = 0x57425A31u; // "WBZ1"
++    uint16_t version = 1;
++    uint16_t reserved = 0;
++    float q[static_cast<int>(BrainContext::Count)][static_cast<int>(BrainAction::Count)] = {};
++    BrainMetrics metrics{};
++};
++
++class BrainCore {
++public:
++    static constexpr float kAlpha = 0.18f;
++    static constexpr float kGamma = 0.82f;
++
++    void reset() {
++        memset(q_, 0, sizeof(q_));
++        metrics_ = BrainMetrics{};
++        havePrev_ = false;
++        micBaseline_ = 0.0f;
++        lastContext_ = BrainContext::Calm;
++        lastAction_ = BrainAction::Idle;
++        haveAction_ = false;
++    }
++
++    void observe(const BrainTelemetry& t) {
++        const float micMean = 0.5f * (std::fabs(static_cast<float>(t.mic_l)) + std::fabs(static_cast<float>(t.mic_r)));
++        if (metrics_.observations == 0) micBaseline_ = micMean;
++        micBaseline_ = 0.985f * micBaseline_ + 0.015f * micMean;
++
++        float noveltyNow = 0.0f;
++        if (havePrev_) {
++            float dDist = 0.0f;
++            if (t.distance_mm >= 0 && prev_.distance_mm >= 0) {
++                dDist = clamp01(std::fabs(static_cast<float>(t.distance_mm - prev_.distance_mm)) / 700.0f);
++            }
++            const float dLight = clamp01(
++                (std::fabs(static_cast<float>(t.light_l - prev_.light_l)) +
++                 std::fabs(static_cast<float>(t.light_r - prev_.light_r))) / 5000.0f);
++            const float dMic = clamp01(
++                (std::fabs(static_cast<float>(t.mic_l - prev_.mic_l)) +
++                 std::fabs(static_cast<float>(t.mic_r - prev_.mic_r))) / 6000.0f);
++            const float gyroMag = std::sqrt(
++                static_cast<float>(t.gyro_x_mrad * t.gyro_x_mrad +
++                                   t.gyro_y_mrad * t.gyro_y_mrad +
++                                   t.gyro_z_mrad * t.gyro_z_mrad));
++            const float motion = clamp01(gyroMag / 2500.0f);
++            noveltyNow = clamp01(0.35f*dDist + 0.20f*dLight + 0.25f*dMic + 0.20f*motion);
++        }
++
++        metrics_.novelty = 0.78f * metrics_.novelty + 0.22f * noveltyNow;
++        metrics_.curiosity = clamp01(0.88f * metrics_.curiosity + 0.12f * (0.20f + 0.80f * metrics_.novelty));
++
++        const float soundExcitation = clamp01(std::fabs(micMean - micBaseline_) / (std::fabs(micBaseline_) * 0.30f + 100.0f));
++        const float gyroAbs = static_cast<float>(std::abs(t.gyro_x_mrad) + std::abs(t.gyro_y_mrad) + std::abs(t.gyro_z_mrad));
++        const float motionExcitation = clamp01(gyroAbs / 3500.0f);
++        metrics_.arousal = clamp01(0.86f * metrics_.arousal + 0.14f * (0.55f*soundExcitation + 0.45f*motionExcitation));
++        metrics_.valence *= 0.995f;
++        metrics_.observations++;
++        metrics_.confidence = clamp01(0.25f + 0.65f * (1.0f - std::exp(-static_cast<float>(metrics_.observations) / 1200.0f)));
++
++        if (haveAction_) {
++            float intrinsic = 0.03f * metrics_.novelty;
++            if (lastAction_ == BrainAction::CreepForward && t.distance_mm >= 0 && t.distance_mm < 280) intrinsic -= 0.65f;
++            if (t.manual != 0) intrinsic -= 0.25f; // Human takeover: action was probably undesirable.
++            if (std::fabs(intrinsic) > 0.001f) learn(lastContext_, lastAction_, intrinsic, classify(t));
++        }
++
++        prev_ = t;
++        havePrev_ = true;
++    }
++
++    BrainContext classify(const BrainTelemetry& t) const {
++        if (t.distance_mm >= 0 && t.distance_mm < 400) return BrainContext::Obstacle;
++
++        const int lightDiff = t.light_l - t.light_r;
++        const int lightScale = (std::abs(t.light_l) + std::abs(t.light_r)) / 2;
++        const int lightThreshold = (lightScale / 12 > 80) ? lightScale / 12 : 80;
++        if (lightDiff > lightThreshold) return BrainContext::LightLeft;
++        if (lightDiff < -lightThreshold) return BrainContext::LightRight;
++
++        const float micMean = 0.5f * (std::fabs(static_cast<float>(t.mic_l)) + std::fabs(static_cast<float>(t.mic_r)));
++        if (std::fabs(micMean - micBaseline_) > (std::fabs(micBaseline_) * 0.35f + 120.0f)) return BrainContext::SoundEvent;
++
++        const int gyroAbs = std::abs(t.gyro_x_mrad) + std::abs(t.gyro_y_mrad) + std::abs(t.gyro_z_mrad);
++        if (gyroAbs > 1800) return BrainContext::MotionEvent;
++        return BrainContext::Calm;
++    }
++
++    BrainAction suggest(const BrainTelemetry& t) const {
++        if (t.manual || t.robot_mode) return BrainAction::Idle;
++        const BrainContext ctx = classify(t);
++        if (ctx == BrainContext::Obstacle) return BrainAction::Stop;
++
++        const int ci = static_cast<int>(ctx);
++        BrainAction best = BrainAction::Idle;
++        float bestQ = q_[ci][0];
++        bool anyLearned = std::fabs(bestQ) > 1e-5f;
++        for (int a = 1; a < static_cast<int>(BrainAction::Count); ++a) {
++            const float qv = q_[ci][a];
++            if (std::fabs(qv) > 1e-5f) anyLearned = true;
++            if (qv > bestQ) {
++                bestQ = qv;
++                best = static_cast<BrainAction>(a);
++            }
++        }
++        if (anyLearned) return best;
++
++        switch (ctx) {
++            case BrainContext::LightLeft: return BrainAction::LookLeft;
++            case BrainContext::LightRight: return BrainAction::LookRight;
++            case BrainContext::SoundEvent:
++                return (t.mic_l >= t.mic_r) ? BrainAction::LookLeft : BrainAction::LookRight;
++            case BrainContext::MotionEvent: return BrainAction::Stop;
++            case BrainContext::Calm:
++            default:
++                return metrics_.curiosity > 0.62f ? BrainAction::CreepForward : BrainAction::Idle;
++        }
++    }
++
++    void markAction(BrainContext context, BrainAction action) {
++        lastContext_ = context;
++        lastAction_ = action;
++        haveAction_ = action != BrainAction::Idle;
++        if (haveAction_) metrics_.actions++;
++    }
++
++    void reward(float rewardValue, BrainContext nextContext) {
++        if (!haveAction_) return;
++        if (rewardValue > 1.0f) rewardValue = 1.0f;
++        if (rewardValue < -1.0f) rewardValue = -1.0f;
++        learn(lastContext_, lastAction_, rewardValue, nextContext);
++        metrics_.valence = clampSigned(0.75f * metrics_.valence + 0.25f * rewardValue);
++        metrics_.rewards++;
++    }
++
++    const BrainMetrics& metrics() const { return metrics_; }
++    float q(BrainContext c, BrainAction a) const { return q_[static_cast<int>(c)][static_cast<int>(a)]; }
++
++    BrainPersist persist() const {
++        BrainPersist p;
++        memcpy(p.q, q_, sizeof(q_));
++        p.metrics = metrics_;
++        return p;
++    }
++
++    bool restore(const BrainPersist& p) {
++        if (p.magic != 0x57425A31u || p.version != 1) return false;
++        memcpy(q_, p.q, sizeof(q_));
++        metrics_ = p.metrics;
++        havePrev_ = false;
++        haveAction_ = false;
++        micBaseline_ = 0.0f;
++        return true;
++    }
++
++    static const char* contextName(BrainContext c) {
++        switch (c) {
++            case BrainContext::Obstacle: return "obstacle";
++            case BrainContext::LightLeft: return "light-left";
++            case BrainContext::LightRight: return "light-right";
++            case BrainContext::SoundEvent: return "sound-event";
++            case BrainContext::MotionEvent: return "motion-event";
++            case BrainContext::Calm:
++            default: return "calm";
++        }
++    }
++
++    static const char* actionName(BrainAction a) {
++        switch (a) {
++            case BrainAction::Stop: return "stop";
++            case BrainAction::LookLeft: return "look-left";
++            case BrainAction::LookRight: return "look-right";
++            case BrainAction::CreepForward: return "creep-forward";
++            case BrainAction::TurnLeft: return "turn-left";
++            case BrainAction::TurnRight: return "turn-right";
++            case BrainAction::Idle:
++            default: return "idle";
++        }
++    }
++
++private:
++    static float clamp01(float x) {
++        if (x < 0.0f) return 0.0f;
++        if (x > 1.0f) return 1.0f;
++        return x;
++    }
++    static float clampSigned(float x) {
++        if (x < -1.0f) return -1.0f;
++        if (x > 1.0f) return 1.0f;
++        return x;
++    }
++    void learn(BrainContext c, BrainAction a, float r, BrainContext next) {
++        const int ci = static_cast<int>(c);
++        const int ai = static_cast<int>(a);
++        const int ni = static_cast<int>(next);
++        float maxNext = q_[ni][0];
++        for (int j = 1; j < static_cast<int>(BrainAction::Count); ++j) {
++            if (q_[ni][j] > maxNext) maxNext = q_[ni][j];
++        }
++        const float target = r + kGamma * maxNext;
++        q_[ci][ai] += kAlpha * (target - q_[ci][ai]);
++    }
++
++    float q_[static_cast<int>(BrainContext::Count)][static_cast<int>(BrainAction::Count)] = {};
++    BrainMetrics metrics_{};
++    BrainTelemetry prev_{};
++    bool havePrev_ = false;
++    float micBaseline_ = 0.0f;
++    BrainContext lastContext_ = BrainContext::Calm;
++    BrainAction lastAction_ = BrainAction::Idle;
++    bool haveAction_ = false;
++};
++
++#endif // WALLZ_BRAIN_CORE_H
+diff --git a/src_esp32_r4/brain_store.cpp b/src_esp32_r4/brain_store.cpp
+new file mode 100644
+index 0000000..1dba82a
+--- /dev/null
++++ b/src_esp32_r4/brain_store.cpp
+@@ -0,0 +1,34 @@
++#include "brain_store.h"
++#include <Preferences.h>
++
++namespace {
++constexpr const char* kNamespace = "wallzbrain";
++constexpr const char* kKey = "state01";
++}
++
++namespace brain_store {
++bool load(BrainCore& brain) {
++    Preferences p;
++    if (!p.begin(kNamespace, true)) return false;
++    BrainPersist state;
++    const size_t got = p.getBytes(kKey, &state, sizeof(state));
++    p.end();
++    return got == sizeof(state) && brain.restore(state);
++}
++
++bool save(const BrainCore& brain) {
++    Preferences p;
++    if (!p.begin(kNamespace, false)) return false;
++    const BrainPersist state = brain.persist();
++    const size_t wrote = p.putBytes(kKey, &state, sizeof(state));
++    p.end();
++    return wrote == sizeof(state);
++}
++
++void clear() {
++    Preferences p;
++    if (!p.begin(kNamespace, false)) return;
++    p.remove(kKey);
++    p.end();
++}
++}
+diff --git a/src_esp32_r4/brain_store.h b/src_esp32_r4/brain_store.h
+new file mode 100644
+index 0000000..249c637
+--- /dev/null
++++ b/src_esp32_r4/brain_store.h
+@@ -0,0 +1,12 @@
++#ifndef WALLZ_BRAIN_STORE_H
++#define WALLZ_BRAIN_STORE_H
++
++#include "brain_core.h"
++
++namespace brain_store {
++bool load(BrainCore& brain);
++bool save(const BrainCore& brain);
++void clear();
++}
++
++#endif
+diff --git a/src_esp32_r4/main_esp.cpp b/src_esp32_r4/main_esp.cpp
+index 79b2c69..68d1b0e 100644
+--- a/src_esp32_r4/main_esp.cpp
++++ b/src_esp32_r4/main_esp.cpp
+@@ -1,240 +1,323 @@
+-/*
+- * UNO R4 WiFi onboard ESP32-S3 gateway:
+- * WiFi STA + status/log web UI. CDC/CMSIS-DAP bridge stays active.
+- * PS4-CAM remains on Serial1 of the Renesas chip — this firmware does not host a pad.
+- */
+- 
+-/*
+-UNO BLE -->     DC:54:75:C3:D9:EC   -
+-PC USB Dongel   00:1F:E2:C8:82:BA
+-ESP 1           66:CB:3E:E9:02:8A
+-ESP             3c:e9:0e:89:80:84
+-ESP small cam   3C:E9:0E:88:65:16
+-PS4 Controller: A4:AE:11:E1:8B:B3 (SONYWA) GooglyEyes
+-PS5 Controller: 88:03:4C:B5:00:66
+-*/
+-
+-#include <Arduino.h>
+-#include <WiFi.h>
+-#include <WebServer.h>
+-#include <esp_uno_r4.h>
+-#include <cstdio>
+-#include <cstring>
+-
+-#include "esp_status.h"
+-#include "log_buffer.h"
+-#include "real_time.h"
+-#include "secrets.h"
+-
+-namespace {
+-WebServer server(80);
+-LogBuffer gatewayLog;
+-uint32_t lastWifiRetryMs = 0;
+-uint32_t lastNtpPollMs = 0;
+-bool wifiWasConnected = false;
+-
+-constexpr uint32_t kWifiRetryMs = 10000;
+-constexpr uint32_t kNtpPollMs = 1000;
+-constexpr uint32_t kWifiConnectTimeoutMs = 15000;
+-
+-const char kIndexHtml[] PROGMEM = R"HTML(<!DOCTYPE html>
+-<html lang="en">
+-<head>
+-<meta charset="utf-8">
+-<meta name="viewport" content="width=device-width,initial-scale=1">
+-<title>Wall-Z ESP gateway</title>
+-<style>
+-body{font-family:sans-serif;margin:1.2rem;background:#111;color:#eee}
+-h1{font-size:1.2rem}
+-dl{display:grid;grid-template-columns:8rem 1fr;gap:.25rem 1rem}
+-dt{opacity:.7}
+-pre{background:#222;padding:.75rem;min-height:8rem;white-space:pre-wrap}
+-</style>
+-</head>
+-<body>
+-<h1>Wall-Z ESP32-S3 gateway</h1>
+-<dl>
+-<dt>wifi</dt><dd id="wifi">-</dd>
+-<dt>ip</dt><dd id="ip">-</dd>
+-<dt>ssid</dt><dd id="ssid">-</dd>
+-<dt>rssi</dt><dd id="rssi">-</dd>
+-<dt>uptime</dt><dd id="uptime">-</dd>
+-<dt>heap</dt><dd id="heap">-</dd>
+-<dt>ntp</dt><dd id="ntp">-</dd>
+-</dl>
+-<h2>log</h2>
+-<pre id="log"></pre>
+-<script>
+-async function tick(){
+-  try{
+-    const s=await (await fetch('/api/status')).json();
+-    wifi.textContent=s.wifi;
+-    ip.textContent=s.ip;
+-    ssid.textContent=s.ssid;
+-    rssi.textContent=s.rssi;
+-    uptime.textContent=s.uptime_ms;
+-    heap.textContent=s.heap;
+-    ntp.textContent=s.ntp;
+-    const log=await (await fetch('/api/log')).json();
+-    document.getElementById('log').textContent=(log.lines||[]).join('\n');
+-  }catch(e){}
+-}
+-tick();
+-setInterval(tick,500);
+-</script>
+-</body>
+-</html>
+-)HTML";
+-
+-void logLine(const char* text) {
+-	gatewayLog.appendln(text);
+-	Serial.println(text);
+-}
+-
+-bool wifiConnected() {
+-	return WiFi.status() == WL_CONNECTED;
+-}
+-
+-void printIpToLog() {
+-	char line[LogBuffer::kLineLength];
+-	snprintf(line, sizeof(line), "IP %s", WiFi.localIP().toString().c_str());
+-	logLine(line);
+-}
+-
+-void connectWifi(uint32_t timeoutMs) {
+-	if (wifiConnected()) {
+-		return;
+-	}
+-	logLine("WiFi connecting");
+-	WiFi.mode(WIFI_STA);
+-	WiFi.begin(SECRET_SSID, SECRET_PASS);
+-	const uint32_t start = millis();
+-	while (!wifiConnected() && (millis() - start) < timeoutMs) {
+-		delay(250);
+-		Serial.print('.');
+-	}
+-	Serial.println();
+-	if (wifiConnected()) {
+-		logLine("WiFi up");
+-		printIpToLog();
+-		wifiWasConnected = true;
+-		real_time::begin();
+-	} else {
+-		logLine("WiFi fail");
+-		wifiWasConnected = false;
+-	}
+-}
+-
+-void copyBounded(char* dest, size_t cap, const char* src) {
+-	if (dest == nullptr || cap == 0) {
+-		return;
+-	}
+-	if (src == nullptr) {
+-		dest[0] = '\0';
+-		return;
+-	}
+-	strncpy(dest, src, cap - 1);
+-	dest[cap - 1] = '\0';
+-}
+-
+-void fillStatus(EspStatus& status, char* ipBuf, size_t ipCap, char* ssidBuf, size_t ssidCap, char* ntpBuf, size_t ntpCap) {
+-	if (wifiConnected()) {
+-		copyBounded(ipBuf, ipCap, WiFi.localIP().toString().c_str());
+-		copyBounded(ssidBuf, ssidCap, WiFi.SSID().c_str());
+-		status.wifi = "connected";
+-		status.rssi = WiFi.RSSI();
+-	} else {
+-		copyBounded(ipBuf, ipCap, "0.0.0.0");
+-		copyBounded(ssidBuf, ssidCap, SECRET_SSID);
+-		status.wifi = "disconnected";
+-		status.rssi = 0;
+-	}
+-	status.ip = ipBuf;
+-	status.ssid = ssidBuf;
+-	real_time::format(ntpBuf, ntpCap);
+-	status.ntp = ntpBuf;
+-	status.uptime_ms = millis();
+-	status.heap = ESP.getFreeHeap();
+-}
+-
+-void handleRoot() {
+-	server.send_P(200, "text/html", kIndexHtml);
+-}
+-
+-void handleStatus() {
+-	char ipBuf[20];
+-	char ssidBuf[33];
+-	char ntpBuf[16];
+-	char json[384];
+-	EspStatus status;
+-	fillStatus(status, ipBuf, sizeof(ipBuf), ssidBuf, sizeof(ssidBuf), ntpBuf, sizeof(ntpBuf));
+-	if (!formatEspStatusJson(json, sizeof(json), status)) {
+-		server.send(500, "application/json", "{\"error\":\"status\"}");
+-		return;
+-	}
+-	server.send(200, "application/json", json);
+-}
+-
+-void handleLog() {
+-	const char* lines[LogBuffer::kLines];
+-	const int count = gatewayLog.packedCount();
+-	for (int i = 0; i < count; ++i) {
+-		lines[i] = gatewayLog.packedLine(i);
+-	}
+-	char json[512];
+-	if (!formatEspLogJson(json, sizeof(json), lines, count)) {
+-		server.send(500, "application/json", "{\"error\":\"log\"}");
+-		return;
+-	}
+-	server.send(200, "application/json", json);
+-}
+-
+-void handleNotFound() {
+-	server.send(404, "text/plain", "not found");
+-}
+-}  // namespace
+-
+-void setup() {
+-	esp_uno_r4_setup();
+-	Serial.begin(115200);
+-	delay(50);
+-	logLine("Wall-Z ESP boot");
+-
+-	connectWifi(kWifiConnectTimeoutMs);
+-
+-	server.on("/", HTTP_GET, handleRoot);
+-	server.on("/api/status", HTTP_GET, handleStatus);
+-	server.on("/api/log", HTTP_GET, handleLog);
+-	server.onNotFound(handleNotFound);
+-	server.begin();
+-	logLine("HTTP :80");
+-	if (wifiConnected()) {
+-		Serial.print("Open http://");
+-		Serial.println(WiFi.localIP());
+-	}
+-}
+-
+-void loop() {
+-	server.handleClient();
+-
+-	const uint32_t now = millis();
+-	const bool nowUp = wifiConnected();
+-	if (nowUp && !wifiWasConnected) {
+-		logLine("WiFi up");
+-		printIpToLog();
+-		real_time::begin();
+-	}
+-	wifiWasConnected = nowUp;
+-
+-	if (!nowUp && (now - lastWifiRetryMs) >= kWifiRetryMs) {
+-		lastWifiRetryMs = now;
+-		logLine("WiFi retry");
+-		WiFi.disconnect();
+-		WiFi.mode(WIFI_STA);
+-		WiFi.begin(SECRET_SSID, SECRET_PASS);
+-	}
+-	if ((now - lastNtpPollMs) >= kNtpPollMs) {
+-		lastNtpPollMs = now;
+-		real_time::poll();
+-	}
+-}
++/*
++ * Wall-Z Brain v0.1.0 — onboard ESP32-S3
++ *
++ * Responsibilities:
++ *   - keep UNO R4 USB CDC/CMSIS-DAP bridge active via ESP_UNO_R4
++ *   - WiFi + NTP + web dashboard
++ *   - read structured telemetry from RA4M1 over the internal UART
++ *   - online novelty / Q-learning state with persistent NVS storage
++ *   - optional, explicitly armed low-authority autonomous suggestions
++ *
++ * Safety/authority model:
++ *   PS4/manual + RA safety > existing RA robot modes > Brain.
++ *   The RA4M1 enforces manual override, heartbeat timeout, sonar clearance,
++ *   short movement deadlines and motor stop independently of this firmware.
++ */
++
++#include <Arduino.h>
++#include <WiFi.h>
++#include <WebServer.h>
++#include <esp_uno_r4.h>
++#include <cstdio>
++#include <cstring>
++
++#include "brain_core.h"
++#include "brain_store.h"
++#include "esp_status.h"
++#include "log_buffer.h"
++#include "ra_link.h"
++#include "real_time.h"
++#include "secrets.h"
++
++namespace {
++WebServer server(80);
++LogBuffer gatewayLog;
++BrainCore brain;
++uint32_t lastWifiRetryMs = 0;
++uint32_t lastNtpPollMs = 0;
++uint32_t lastBrainObserveMs = 0;
++uint32_t lastBrainActionMs = 0;
++uint32_t lastPersistMs = 0;
++bool wifiWasConnected = false;
++bool autonomyEnabled = false;
++BrainAction lastSuggested = BrainAction::Idle;
++BrainContext lastContext = BrainContext::Calm;
++
++constexpr uint32_t kWifiRetryMs = 10000;
++constexpr uint32_t kNtpPollMs = 1000;
++constexpr uint32_t kWifiConnectTimeoutMs = 15000;
++constexpr uint32_t kBrainActionPeriodMs = 850;
++constexpr uint32_t kPersistPeriodMs = 300000; // reduce NVS wear
++
++const char kIndexHtml[] PROGMEM = R"HTML(<!DOCTYPE html>
++<html lang="en">
++<head>
++<meta charset="utf-8">
++<meta name="viewport" content="width=device-width,initial-scale=1">
++<title>Wall-Z Brain v0.1</title>
++<style>
++:root{color-scheme:dark} body{font-family:system-ui,sans-serif;margin:1rem;background:#101114;color:#eee;max-width:1000px}
++h1{font-size:1.35rem;margin-bottom:.3rem} h2{font-size:1rem;margin-top:1.4rem}
++.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:.8rem}.card{background:#1b1d22;border:1px solid #333;border-radius:10px;padding:.8rem}
++dl{display:grid;grid-template-columns:8rem 1fr;gap:.2rem .6rem;margin:.2rem 0}dt{opacity:.65}dd{margin:0;font-family:ui-monospace,monospace}
++button{margin:.2rem;padding:.45rem .7rem;border:1px solid #555;border-radius:7px;background:#262a31;color:#eee;cursor:pointer}.danger{border-color:#944}.good{border-color:#496}
++pre{background:#08090b;padding:.65rem;min-height:7rem;white-space:pre-wrap;overflow:auto}.bar{height:8px;background:#333;border-radius:5px;overflow:hidden}.bar>i{display:block;height:100%;background:#aaa;width:0%}
++small{opacity:.65}.armed{color:#8f8}.off{color:#aaa}.warn{color:#f99}
++</style>
++</head>
++<body>
++<h1>Wall-Z Brain v0.1.0</h1><small>RA4M1 owns motors/safety. ESP32-S3 observes, remembers and learns.</small>
++<div class="grid">
++<section class="card"><h2>Robot</h2><dl>
++<dt>RA link</dt><dd id="ra">-</dd><dt>distance</dt><dd id="dist">-</dd><dt>light L/R</dt><dd id="light">-</dd><dt>mic L/R</dt><dd id="mic">-</dd><dt>gyro mrad/s</dt><dd id="gyro">-</dd><dt>head</dt><dd id="head">-</dd><dt>manual</dt><dd id="manual">-</dd><dt>robot mode</dt><dd id="robotmode">-</dd><dt>brain armed</dt><dd id="armed">-</dd></dl>
++<button class="good" onclick="post('/api/brain/arm?on=1')">ARM brain</button><button onclick="post('/api/brain/arm?on=0')">Disarm</button><button class="danger" onclick="post('/api/robot/stop')">STOP</button></section>
++<section class="card"><h2>Cognitive state</h2><dl>
++<dt>context</dt><dd id="context">-</dd><dt>suggestion</dt><dd id="action">-</dd><dt>observations</dt><dd id="obs">-</dd><dt>rewards</dt><dd id="rewards">-</dd></dl>
++<div>novelty <span id="noveltyv"></span><div class="bar"><i id="novelty"></i></div></div>
++<div>curiosity <span id="curiosityv"></span><div class="bar"><i id="curiosity"></i></div></div>
++<div>arousal <span id="arousalv"></span><div class="bar"><i id="arousal"></i></div></div>
++<div>confidence <span id="confidencev"></span><div class="bar"><i id="confidence"></i></div></div>
++<div>valence <span id="valencev"></span></div>
++<p><button class="good" onclick="post('/api/brain/reward?v=1')">+ reward</button><button class="danger" onclick="post('/api/brain/reward?v=-1')">- reward</button><button onclick="post('/api/brain/reset')">Reset learning</button></p></section>
++<section class="card"><h2>Network</h2><dl><dt>wifi</dt><dd id="wifi">-</dd><dt>ip</dt><dd id="ip">-</dd><dt>ssid</dt><dd id="ssid">-</dd><dt>rssi</dt><dd id="rssi">-</dd><dt>heap</dt><dd id="heap">-</dd><dt>ntp</dt><dd id="ntp">-</dd><dt>RA ack</dt><dd id="ack">-</dd></dl></section>
++</div>
++<h2>ESP log</h2><pre id="log"></pre>
++<script>
++async function post(u){try{await fetch(u,{method:'POST'});setTimeout(tick,80)}catch(e){}}
++function bar(id,v){v=Math.max(0,Math.min(1,v));document.getElementById(id).style.width=(100*v).toFixed(0)+'%';document.getElementById(id+'v').textContent=v.toFixed(3)}
++async function tick(){try{
++ const [s,r,b,l]=await Promise.all([fetch('/api/status').then(x=>x.json()),fetch('/api/robot').then(x=>x.json()),fetch('/api/brain').then(x=>x.json()),fetch('/api/log').then(x=>x.json())]);
++ wifi.textContent=s.wifi;ip.textContent=s.ip;ssid.textContent=s.ssid;rssi.textContent=s.rssi+' dBm';heap.textContent=s.heap;ntp.textContent=s.ntp;
++ ra.textContent=r.online?'online ('+r.age_ms+' ms)':'offline';dist.textContent=r.distance_mm<0?'n/a':r.distance_mm+' mm';light.textContent=r.light_l+' / '+r.light_r;mic.textContent=r.mic_l+' / '+r.mic_r;gyro.textContent=r.gx+' / '+r.gy+' / '+r.gz;head.textContent=r.head_xy+' / '+r.head_z;manual.textContent=r.manual?'ACTIVE':'no';robotmode.textContent=r.robot_mode?'ACTIVE':'no';armed.textContent=r.brain_armed?'YES':'no';armed.className=r.brain_armed?'armed':'off';ack.textContent=r.ack;
++ context.textContent=b.context;action.textContent=b.suggestion+(b.autonomy?' [AUTO]':' [shadow]');obs.textContent=b.observations;rewards.textContent=b.rewards;bar('novelty',b.novelty);bar('curiosity',b.curiosity);bar('arousal',b.arousal);bar('confidence',b.confidence);valence.textContent=b.valence.toFixed(3);document.getElementById('log').textContent=(l.lines||[]).join('\n');
++}catch(e){}}
++tick();setInterval(tick,500);
++</script></body></html>)HTML";
++
++void logLine(const char* text) {
++    gatewayLog.appendln(text);
++    USBSerial.println(text);
++}
++
++bool wifiConnected() { return WiFi.status() == WL_CONNECTED; }
++
++void printIpToLog() {
++    char line[LogBuffer::kLineLength];
++    snprintf(line, sizeof(line), "IP %s", WiFi.localIP().toString().c_str());
++    logLine(line);
++}
++
++void connectWifi(uint32_t timeoutMs) {
++    if (wifiConnected()) return;
++    logLine("WiFi connecting");
++    WiFi.mode(WIFI_STA);
++    WiFi.begin(SECRET_SSID, SECRET_PASS);
++    const uint32_t start = millis();
++    while (!wifiConnected() && (millis() - start) < timeoutMs) {
++        delay(250);
++        USBSerial.print('.');
++    }
++    USBSerial.println();
++    if (wifiConnected()) {
++        logLine("WiFi up");
++        printIpToLog();
++        wifiWasConnected = true;
++        real_time::begin();
++    } else {
++        logLine("WiFi fail");
++        wifiWasConnected = false;
++    }
++}
++
++void copyBounded(char* dest, size_t cap, const char* src) {
++    if (!dest || cap == 0) return;
++    if (!src) { dest[0] = '\0'; return; }
++    strncpy(dest, src, cap - 1);
++    dest[cap - 1] = '\0';
++}
++
++void fillStatus(EspStatus& status, char* ipBuf, size_t ipCap, char* ssidBuf, size_t ssidCap, char* ntpBuf, size_t ntpCap) {
++    if (wifiConnected()) {
++        copyBounded(ipBuf, ipCap, WiFi.localIP().toString().c_str());
++        copyBounded(ssidBuf, ssidCap, WiFi.SSID().c_str());
++        status.wifi = "connected";
++        status.rssi = WiFi.RSSI();
++    } else {
++        copyBounded(ipBuf, ipCap, "0.0.0.0");
++        copyBounded(ssidBuf, ssidCap, SECRET_SSID);
++        status.wifi = "disconnected";
++        status.rssi = 0;
++    }
++    status.ip = ipBuf; status.ssid = ssidBuf;
++    real_time::format(ntpBuf, ntpCap); status.ntp = ntpBuf;
++    status.uptime_ms = millis(); status.heap = ESP.getFreeHeap();
++}
++
++void handleRoot() { server.send_P(200, "text/html", kIndexHtml); }
++
++void handleStatus() {
++    char ipBuf[20], ssidBuf[33], ntpBuf[16], json[384];
++    EspStatus status;
++    fillStatus(status, ipBuf, sizeof(ipBuf), ssidBuf, sizeof(ssidBuf), ntpBuf, sizeof(ntpBuf));
++    if (!formatEspStatusJson(json, sizeof(json), status)) { server.send(500, "application/json", "{\"error\":\"status\"}"); return; }
++    server.send(200, "application/json", json);
++}
++
++void handleLog() {
++    const char* lines[LogBuffer::kLines];
++    const int count = gatewayLog.packedCount();
++    for (int i=0;i<count;++i) lines[i]=gatewayLog.packedLine(i);
++    char json[768];
++    if (!formatEspLogJson(json, sizeof(json), lines, count)) { server.send(500,"application/json","{\"error\":\"log\"}"); return; }
++    server.send(200,"application/json",json);
++}
++
++void handleRobot() {
++    const uint32_t now = millis();
++    const bool online = ra_link::online(now);
++    const BrainTelemetry& t = ra_link::telemetry();
++    char json[640];
++    snprintf(json, sizeof(json),
++        "{\"online\":%s,\"age_ms\":%lu,\"distance_mm\":%d,\"light_l\":%d,\"light_r\":%d,\"mic_l\":%d,\"mic_r\":%d,\"gx\":%d,\"gy\":%d,\"gz\":%d,\"head_xy\":%d,\"head_z\":%d,\"manual\":%d,\"robot_mode\":%d,\"brain_armed\":%d,\"ack\":\"%s\"}",
++        online?"true":"false", static_cast<unsigned long>(ra_link::telemetryAge(now)),
++        t.distance_mm,t.light_l,t.light_r,t.mic_l,t.mic_r,t.gyro_x_mrad,t.gyro_y_mrad,t.gyro_z_mrad,
++        t.head_xy,t.head_z,t.manual,t.robot_mode,t.brain_armed,ra_link::lastAck());
++    server.send(200,"application/json",json);
++}
++
++void handleBrain() {
++    BrainTelemetry t = ra_link::telemetry();
++    const BrainMetrics& m = brain.metrics();
++    const BrainContext ctx = brain.classify(t);
++    const BrainAction suggestion = brain.suggest(t);
++    char json[640];
++    snprintf(json,sizeof(json),
++        "{\"context\":\"%s\",\"suggestion\":\"%s\",\"autonomy\":%s,\"novelty\":%.5f,\"curiosity\":%.5f,\"arousal\":%.5f,\"confidence\":%.5f,\"valence\":%.5f,\"observations\":%lu,\"rewards\":%lu,\"actions\":%lu}",
++        BrainCore::contextName(ctx),BrainCore::actionName(suggestion),autonomyEnabled?"true":"false",
++        m.novelty,m.curiosity,m.arousal,m.confidence,m.valence,
++        static_cast<unsigned long>(m.observations),static_cast<unsigned long>(m.rewards),static_cast<unsigned long>(m.actions));
++    server.send(200,"application/json",json);
++}
++
++void handleArm() {
++    const bool on = server.hasArg("on") && server.arg("on").toInt()!=0;
++    if (on) {
++        if (!ra_link::online(millis())) { server.send(409,"application/json","{\"error\":\"ra-offline\"}"); return; }
++        const BrainTelemetry& t=ra_link::telemetry();
++        if (t.manual || t.robot_mode) { server.send(409,"application/json","{\"error\":\"manual-or-robot-mode\"}"); return; }
++    }
++    autonomyEnabled=on;
++    ra_link::arm(on);
++    logLine(on?"Brain autonomy ARM requested":"Brain autonomy disarmed");
++    server.send(200,"application/json",on?"{\"autonomy\":true}":"{\"autonomy\":false}");
++}
++
++void handleStop() {
++    autonomyEnabled=false;
++    ra_link::stop();
++    logLine("Robot STOP requested");
++    server.send(200,"application/json","{\"stop\":true}");
++}
++
++void handleReward() {
++    float v=server.hasArg("v")?server.arg("v").toFloat():0.0f;
++    if (v>1.0f) v=1.0f; if (v<-1.0f) v=-1.0f;
++    const BrainContext next=brain.classify(ra_link::telemetry());
++    brain.reward(v,next);
++    brain_store::save(brain);
++    char line[64]; snprintf(line,sizeof(line),"Brain reward %.2f",v); logLine(line);
++    server.send(200,"application/json","{\"reward\":true}");
++}
++
++void handleResetBrain() {
++    autonomyEnabled=false; ra_link::arm(false);
++    brain.reset(); brain_store::clear();
++    logLine("Brain learning reset");
++    server.send(200,"application/json","{\"reset\":true}");
++}
++
++void executeBrainAction(uint32_t now) {
++    if (!autonomyEnabled || !ra_link::online(now) || !ra_link::hasTelemetry()) return;
++    const BrainTelemetry& t=ra_link::telemetry();
++    if (t.manual || t.robot_mode) {
++        autonomyEnabled=false;
++        ra_link::arm(false);
++        logLine("Brain auto-disarm: manual/robot mode");
++        return;
++    }
++    if (!t.brain_armed) return; // wait for RA acknowledgement / state update
++    if (static_cast<uint32_t>(now-lastBrainActionMs)<kBrainActionPeriodMs) return;
++    lastBrainActionMs=now;
++
++    lastContext=brain.classify(t);
++    lastSuggested=brain.suggest(t);
++    brain.markAction(lastContext,lastSuggested);
++    switch(lastSuggested) {
++        case BrainAction::Stop:
++            autonomyEnabled=false;
++            ra_link::stop();
++            break;
++        case BrainAction::LookLeft: ra_link::head(145,t.head_z); break;
++        case BrainAction::LookRight: ra_link::head(35,t.head_z); break;
++        case BrainAction::CreepForward: ra_link::move('F',180); break;
++        case BrainAction::TurnLeft: ra_link::move('L',150); break;
++        case BrainAction::TurnRight: ra_link::move('R',150); break;
++        case BrainAction::Idle:
++        default: break;
++    }
++}
++
++void handleNotFound(){server.send(404,"text/plain","not found");}
++}
++
++void setup() {
++    esp_uno_r4_setup();
++    delay(50);
++    logLine("Wall-Z Brain v0.1.0 ESP32-S3 boot");
++    ra_link::begin();
++    if (brain_store::load(brain)) logLine("Brain memory restored");
++    else logLine("Brain memory new");
++
++    connectWifi(kWifiConnectTimeoutMs);
++
++    server.on("/",HTTP_GET,handleRoot);
++    server.on("/api/status",HTTP_GET,handleStatus);
++    server.on("/api/log",HTTP_GET,handleLog);
++    server.on("/api/robot",HTTP_GET,handleRobot);
++    server.on("/api/brain",HTTP_GET,handleBrain);
++    server.on("/api/brain/arm",HTTP_POST,handleArm);
++    server.on("/api/brain/reward",HTTP_POST,handleReward);
++    server.on("/api/brain/reset",HTTP_POST,handleResetBrain);
++    server.on("/api/robot/stop",HTTP_POST,handleStop);
++    server.onNotFound(handleNotFound);
++    server.begin();
++    logLine("HTTP :80");
++    if (wifiConnected()) { USBSerial.print("Open http://"); USBSerial.println(WiFi.localIP()); }
++}
++
++void loop() {
++    server.handleClient();
++    const uint32_t now=millis();
++    ra_link::poll(now);
++    ra_link::heartbeat(now);
++
++    if (ra_link::hasTelemetry() && static_cast<uint32_t>(now-lastBrainObserveMs)>=100) {
++        lastBrainObserveMs=now;
++        brain.observe(ra_link::telemetry());
++    }
++    executeBrainAction(now);
++
++    if (static_cast<uint32_t>(now-lastPersistMs)>=kPersistPeriodMs) {
++        lastPersistMs=now;
++        brain_store::save(brain);
++    }
++
++    const bool nowUp=wifiConnected();
++    if (nowUp && !wifiWasConnected) {logLine("WiFi up");printIpToLog();real_time::begin();}
++    wifiWasConnected=nowUp;
++    if (!nowUp && static_cast<uint32_t>(now-lastWifiRetryMs)>=kWifiRetryMs) {
++        lastWifiRetryMs=now; logLine("WiFi retry"); WiFi.disconnect(); WiFi.mode(WIFI_STA); WiFi.begin(SECRET_SSID,SECRET_PASS);
++    }
++    if (static_cast<uint32_t>(now-lastNtpPollMs)>=kNtpPollMs) {lastNtpPollMs=now;real_time::poll();}
++    delay(1);
++}
+diff --git a/src_esp32_r4/ra_link.cpp b/src_esp32_r4/ra_link.cpp
+new file mode 100644
+index 0000000..241b725
+--- /dev/null
++++ b/src_esp32_r4/ra_link.cpp
+@@ -0,0 +1,91 @@
++#include "ra_link.h"
++
++#include <Arduino.h>
++#include <cstdio>
++#include <cstring>
++#include <esp_uno_r4.h>
++
++namespace {
++BrainTelemetry sTelemetry{};
++bool sHaveTelemetry = false;
++uint32_t sLastTelemetryLocalMs = 0;
++uint32_t sLastHeartbeatMs = 0;
++char sLine[192] = {};
++uint16_t sLinePos = 0;
++char sLastAck[64] = "none";
++
++void sendLine(const char* line) {
++    SERIAL_AT.println(line);
++}
++
++void handleLine(char* line, uint32_t now) {
++    BrainTelemetry t;
++    if (parseBrainTelemetry(line, t)) {
++        sTelemetry = t;
++        sHaveTelemetry = true;
++        sLastTelemetryLocalMs = now;
++        return;
++    }
++    if (strncmp(line, "A,", 2) == 0 || strncmp(line, "RA,", 3) == 0) {
++        strncpy(sLastAck, line, sizeof(sLastAck)-1);
++        sLastAck[sizeof(sLastAck)-1] = '\0';
++    }
++}
++}
++
++namespace ra_link {
++void begin() {
++    // esp_uno_r4_setup() already configured SERIAL_AT = ESP32-S3 Serial1
++    // at 115200 baud on the onboard RA4M1 link (GPIO 6/5).
++    sHaveTelemetry = false;
++    sLastHeartbeatMs = 0;
++    sendLine("B,HB");
++}
++
++void poll(uint32_t now) {
++    uint16_t budget = 256;
++    while (SERIAL_AT.available() > 0 && budget-- > 0) {
++        const char c = static_cast<char>(SERIAL_AT.read());
++        if (c == '\r') continue;
++        if (c == '\n') {
++            sLine[sLinePos] = '\0';
++            if (sLinePos > 0) handleLine(sLine, now);
++            sLinePos = 0;
++            continue;
++        }
++        if (sLinePos < sizeof(sLine)-1) sLine[sLinePos++] = c;
++        else sLinePos = 0;
++    }
++}
++
++void heartbeat(uint32_t now) {
++    if (static_cast<uint32_t>(now - sLastHeartbeatMs) >= 250) {
++        sLastHeartbeatMs = now;
++        sendLine("B,HB");
++    }
++}
++
++bool online(uint32_t now, uint32_t maxAgeMs) {
++    return sHaveTelemetry && static_cast<uint32_t>(now - sLastTelemetryLocalMs) <= maxAgeMs;
++}
++
++bool hasTelemetry() { return sHaveTelemetry; }
++const BrainTelemetry& telemetry() { return sTelemetry; }
++uint32_t telemetryAge(uint32_t now) { return sHaveTelemetry ? static_cast<uint32_t>(now - sLastTelemetryLocalMs) : 0xFFFFFFFFu; }
++const char* lastAck() { return sLastAck; }
++
++void arm(bool enable) {
++    sendLine(enable ? "B,ARM,1" : "B,ARM,0");
++}
++void stop() { sendLine("B,STOP"); }
++void head(int xy, int z) {
++    char b[48];
++    snprintf(b, sizeof(b), "B,HEAD,%d,%d", xy, z);
++    sendLine(b);
++}
++void move(char direction, uint32_t durationMs) {
++    char b[48];
++    snprintf(b, sizeof(b), "B,MOVE,%c,%lu", direction, static_cast<unsigned long>(durationMs));
++    sendLine(b);
++}
++}
+diff --git a/src_esp32_r4/ra_link.h b/src_esp32_r4/ra_link.h
+new file mode 100644
+index 0000000..47dbf60
+--- /dev/null
++++ b/src_esp32_r4/ra_link.h
+@@ -0,0 +1,23 @@
++#ifndef WALLZ_RA_LINK_H
++#define WALLZ_RA_LINK_H
++
++#include <cstdint>
++#include "brain_protocol.h"
++
++namespace ra_link {
++void begin();
++void poll(uint32_t now);
++void heartbeat(uint32_t now);
++bool online(uint32_t now, uint32_t maxAgeMs = 1000);
++bool hasTelemetry();
++const BrainTelemetry& telemetry();
++uint32_t telemetryAge(uint32_t now);
++const char* lastAck();
++
++void arm(bool enable);
++void stop();
++void head(int xy, int z);
++void move(char direction, uint32_t durationMs);
++}
++
++#endif // WALLZ_RA_LINK_H
+diff --git a/test/test_brain_v01/test_main.cpp b/test/test_brain_v01/test_main.cpp
+new file mode 100644
+index 0000000..448440c
+--- /dev/null
++++ b/test/test_brain_v01/test_main.cpp
+@@ -0,0 +1,61 @@
++#include <unity.h>
++#include <cmath>
++#include "brain_protocol.h"
++#include "brain_core.h"
++
++void setUp(void) {}
++void tearDown(void) {}
++
++void test_protocol_parse() {
++    BrainTelemetry t;
++    TEST_ASSERT_TRUE(parseBrainTelemetry("T,100,500,1000,900,100,110,1,2,3,90,135,0,0,1", t));
++    TEST_ASSERT_EQUAL_UINT32(100, t.ms);
++    TEST_ASSERT_EQUAL_INT(500, t.distance_mm);
++    TEST_ASSERT_EQUAL_INT(135, t.head_z);
++    TEST_ASSERT_EQUAL_INT(1, t.brain_armed);
++    TEST_ASSERT_FALSE(parseBrainTelemetry("X,100", t));
++}
++
++void test_obstacle_is_stop() {
++    BrainCore b;
++    BrainTelemetry t;
++    t.distance_mm = 250;
++    b.observe(t);
++    TEST_ASSERT_EQUAL_INT((int)BrainContext::Obstacle, (int)b.classify(t));
++    TEST_ASSERT_EQUAL_INT((int)BrainAction::Stop, (int)b.suggest(t));
++}
++
++void test_reward_increases_q_value() {
++    BrainCore b;
++    BrainTelemetry t;
++    t.distance_mm = 1000;
++    t.light_l = 2200;
++    t.light_r = 300;
++    b.observe(t);
++    b.markAction(BrainContext::LightLeft, BrainAction::LookLeft);
++    const float before = b.q(BrainContext::LightLeft, BrainAction::LookLeft);
++    b.reward(1.0f, BrainContext::Calm);
++    const float after = b.q(BrainContext::LightLeft, BrainAction::LookLeft);
++    TEST_ASSERT_TRUE(after > before);
++}
++
++void test_persist_restore() {
++    BrainCore b;
++    b.markAction(BrainContext::Calm, BrainAction::CreepForward);
++    b.reward(0.8f, BrainContext::Calm);
++    const BrainPersist p = b.persist();
++    BrainCore c;
++    TEST_ASSERT_TRUE(c.restore(p));
++    TEST_ASSERT_FLOAT_WITHIN(1e-6f,
++        b.q(BrainContext::Calm, BrainAction::CreepForward),
++        c.q(BrainContext::Calm, BrainAction::CreepForward));
++}
++
++int main(int, char**) {
++    UNITY_BEGIN();
++    RUN_TEST(test_protocol_parse);
++    RUN_TEST(test_obstacle_is_stop);
++    RUN_TEST(test_reward_increases_q_value);
++    RUN_TEST(test_persist_restore);
++    return UNITY_END();
++}
+diff --git a/tools/brain_test_standalone.cpp b/tools/brain_test_standalone.cpp
+new file mode 100644
+index 0000000..5cc82b4
+--- /dev/null
++++ b/tools/brain_test_standalone.cpp
+@@ -0,0 +1,45 @@
++#include <cassert>
++#include <cmath>
++#include <cstring>
++#include <iostream>
++#include "brain_protocol.h"
++#include "brain_core.h"
++
++int main(){
++    BrainTelemetry t;
++    assert(parseBrainTelemetry("T,100,500,1000,900,100,110,1,2,3,90,135,0,0,1", t));
++    assert(t.ms==100 && t.distance_mm==500 && t.light_l==1000 && t.head_z==135 && t.brain_armed==1);
++    assert(!parseBrainTelemetry("X,100", t));
++
++    BrainCore b;
++    for(int i=0;i<100;++i){
++        t.ms=i*100; t.distance_mm=1000; t.light_l=500; t.light_r=500; t.mic_l=100; t.mic_r=100;
++        b.observe(t);
++    }
++    assert(b.metrics().observations==100);
++    assert(b.metrics().curiosity>=0.0f && b.metrics().curiosity<=1.0f);
++
++    t.distance_mm=250;
++    b.observe(t);
++    assert(b.classify(t)==BrainContext::Obstacle);
++    assert(b.suggest(t)==BrainAction::Stop);
++
++    t.distance_mm=1000; t.light_l=2000; t.light_r=500;
++    b.observe(t);
++    assert(b.classify(t)==BrainContext::LightLeft);
++    assert(b.suggest(t)==BrainAction::LookLeft);
++
++    b.markAction(BrainContext::LightLeft, BrainAction::LookLeft);
++    const float q0=b.q(BrainContext::LightLeft, BrainAction::LookLeft);
++    b.reward(1.0f, BrainContext::Calm);
++    const float q1=b.q(BrainContext::LightLeft, BrainAction::LookLeft);
++    assert(q1>q0);
++
++    BrainPersist p=b.persist();
++    BrainCore restored;
++    assert(restored.restore(p));
++    assert(std::fabs(restored.q(BrainContext::LightLeft, BrainAction::LookLeft)-q1)<1e-6f);
++
++    std::cout << "Wall-Z Brain v0.1 standalone tests: PASS\n";
++    return 0;
++}
